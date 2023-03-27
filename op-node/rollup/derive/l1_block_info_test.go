@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum-optimism/optimism/op-node/testutils"
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 
 var _ eth.BlockInfo = (*testutils.MockBlockInfo)(nil)
@@ -35,6 +36,7 @@ func randomL1Cfg(rng *rand.Rand, l1Info eth.BlockInfo) eth.SystemConfig {
 var MockDepositContractAddr = common.HexToAddress("0xdeadbeefdeadbeefdeadbeefdeadbeef00000000")
 
 func TestParseL1InfoDepositTxData(t *testing.T) {
+	opservice.ForBSC = false
 	randomSeqNr := func(rng *rand.Rand) uint64 {
 		return rng.Uint64()
 	}

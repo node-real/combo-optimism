@@ -99,6 +99,13 @@ var (
 		Usage:  "Initialize the sequencer in a stopped state. The sequencer can be started using the admin_startSequencer RPC",
 		EnvVar: prefixEnvVar("SEQUENCER_STOPPED"),
 	}
+	SequencerMaxSafeLagFlag = cli.Uint64Flag{
+		Name:     "sequencer.max-safe-lag",
+		Usage:    "Maximum number of L2 blocks for restricting the distance between L2 safe and unsafe",
+		EnvVar:   prefixEnvVar("SEQUENCER_MAX_SAFE_LAG"),
+		Required: false,
+		Value:    0,
+	}
 	SequencerL1Confs = cli.Uint64Flag{
 		Name:     "sequencer.l1-confs",
 		Usage:    "Number of L1 blocks to keep distance from the L1 head as a sequencer for picking an L1 origin.",
@@ -203,6 +210,7 @@ var optionalFlags = append([]cli.Flag{
 	VerifierL1Confs,
 	SequencerEnabledFlag,
 	SequencerStoppedFlag,
+	SequencerMaxSafeLagFlag,
 	SequencerL1Confs,
 	L1EpochPollIntervalFlag,
 	LogLevelFlag,

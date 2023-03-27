@@ -35,6 +35,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-node/sources"
 	"github.com/ethereum-optimism/optimism/op-node/testlog"
 	"github.com/ethereum-optimism/optimism/op-node/withdrawals"
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 
 var enableParallelTesting bool = true
@@ -53,6 +54,7 @@ func init() {
 	if os.Getenv("OP_E2E_DISABLE_PARALLEL") == "true" {
 		enableParallelTesting = false
 	}
+	opservice.ForBSC = false
 }
 
 func parallel(t *testing.T) {

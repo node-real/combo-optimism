@@ -136,10 +136,11 @@ func NewL2EndpointConfig(ctx *cli.Context, log log.Logger) (*node.L2EndpointConf
 
 func NewDriverConfig(ctx *cli.Context) (*driver.Config, error) {
 	return &driver.Config{
-		VerifierConfDepth:  ctx.GlobalUint64(flags.VerifierL1Confs.Name),
-		SequencerConfDepth: ctx.GlobalUint64(flags.SequencerL1Confs.Name),
-		SequencerEnabled:   ctx.GlobalBool(flags.SequencerEnabledFlag.Name),
-		SequencerStopped:   ctx.GlobalBool(flags.SequencerStoppedFlag.Name),
+		VerifierConfDepth:   ctx.GlobalUint64(flags.VerifierL1Confs.Name),
+		SequencerConfDepth:  ctx.GlobalUint64(flags.SequencerL1Confs.Name),
+		SequencerEnabled:    ctx.GlobalBool(flags.SequencerEnabledFlag.Name),
+		SequencerStopped:    ctx.GlobalBool(flags.SequencerStoppedFlag.Name),
+		SequencerMaxSafeLag: ctx.GlobalUint64(flags.SequencerMaxSafeLagFlag.Name),
 	}, nil
 }
 

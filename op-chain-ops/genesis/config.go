@@ -20,6 +20,8 @@ import (
 	"github.com/ethereum-optimism/optimism/op-chain-ops/state"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 
 var (
@@ -420,8 +422,10 @@ func NewL2StorageConfig(config *DeployConfig, block *types.Block) (state.Storage
 	if block.Number() == nil {
 		return storage, errors.New("block number not set")
 	}
-	if block.BaseFee() == nil {
-		return storage, errors.New("block base fee not set")
+	if !opservice.ForBSC {
+		if block.BaseFee() == nil {
+			return storage, errors.New("block base fee not set")
+		}
 	}
 
 	storage["L2ToL1MessagePasser"] = state.StorageValues{
@@ -434,14 +438,17 @@ func NewL2StorageConfig(config *DeployConfig, block *types.Block) (state.Storage
 		"msgNonce":         0,
 	}
 	storage["L1Block"] = state.StorageValues{
-		"number":         block.Number(),
-		"timestamp":      block.Time(),
+		"number":    block.Number(),
+		"timestamp": block.Time(),
 		"basefee":        block.BaseFee(),
 		"hash":           block.Hash(),
 		"sequenceNumber": 0,
 		"batcherHash":    config.BatchSenderAddress.Hash(),
 		"l1FeeOverhead":  config.GasPriceOracleOverhead,
 		"l1FeeScalar":    config.GasPriceOracleScalar,
+	}
+	if opservice.ForBSC {
+		storage["L1Block"]["basefee"] = derive.BSCFakeBaseFee
 	}
 	storage["LegacyERC20ETH"] = state.StorageValues{
 		"_name":   "Ether",

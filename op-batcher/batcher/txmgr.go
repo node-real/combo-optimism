@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"time"
 
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 	"github.com/ethereum-optimism/optimism/op-service/txmgr"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -86,10 +87,14 @@ func (t *TransactionManager) calcGasTipAndFeeCap(ctx context.Context) (gasTipCap
 	if err != nil || head == nil {
 		return nil, nil, fmt.Errorf("failed to get L1 head block for fee cap: %w", err)
 	}
-	if head.BaseFee == nil {
-		return nil, nil, fmt.Errorf("failed to get L1 basefee in block %d for fee cap", head.Number)
+	if opservice.ForBSC {
+		gasFeeCap = txmgr.CalcGasFeeCap(big.NewInt(0), gasTipCap)
+	} else {
+		if head.BaseFee == nil {
+			return nil, nil, fmt.Errorf("failed to get L1 basefee in block %d for fee cap", head.Number)
+		}
+		gasFeeCap = txmgr.CalcGasFeeCap(head.BaseFee, gasTipCap)
 	}
-	gasFeeCap = txmgr.CalcGasFeeCap(head.BaseFee, gasTipCap)
 
 	return gasTipCap, gasFeeCap, nil
 }
@@ -110,14 +115,20 @@ func (t *TransactionManager) CraftTx(ctx context.Context, data []byte) (*types.T
 		return nil, fmt.Errorf("failed to get nonce: %w", err)
 	}
 
-	rawTx := &types.DynamicFeeTx{
-		ChainID:   t.chainID,
-		Nonce:     nonce,
-		To:        &t.batchInboxAddress,
-		GasTipCap: gasTipCap,
-		GasFeeCap: gasFeeCap,
-		Data:      data,
+	rawTx := &types.LegacyTx{
+		Nonce:    nonce,
+		To:       &t.batchInboxAddress,
+		GasPrice: big.NewInt(0).Add(gasTipCap, gasFeeCap),
+		Data:     data,
 	}
+	// rawTx := &types.DynamicFeeTx{
+	// 	ChainID:   t.chainID,
+	// 	Nonce:     nonce,
+	// 	To:        &t.batchInboxAddress,
+	// 	GasTipCap: gasTipCap,
+	// 	GasFeeCap: gasFeeCap,
+	// 	Data:      data,
+	// }
 	t.log.Info("creating tx", "to", rawTx.To, "from", t.senderAddress)
 
 	gas, err := core.IntrinsicGas(rawTx.Data, nil, false, true, true, false)

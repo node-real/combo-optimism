@@ -19,11 +19,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum-optimism/optimism/op-node/sources"
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 	opcrypto "github.com/ethereum-optimism/optimism/op-service/crypto"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -321,6 +323,39 @@ func (l *L2OutputSubmitter) FetchNextOutputInfo(ctx context.Context) (*eth.Outpu
 	return output, true, nil
 }
 
+// calcGasTipAndFeeCap queries L1 to determine what a suitable miner tip & basefee limit would be for timely inclusion
+func (t *L2OutputSubmitter) calcGasTipAndFeeCap(ctx context.Context) (gasTipCap *big.Int, gasFeeCap *big.Int, err error) {
+	networkTimeout := 10 * time.Second
+	childCtx, cancel := context.WithTimeout(ctx, networkTimeout)
+	gasTipCap, err = t.l1Client.SuggestGasTipCap(childCtx)
+	cancel()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get suggested gas tip cap: %w", err)
+	}
+
+	if gasTipCap == nil {
+		t.log.Warn("unexpected unset gasTipCap, using default 2 gwei")
+		gasTipCap = new(big.Int).SetUint64(params.GWei * 2)
+	}
+
+	childCtx, cancel = context.WithTimeout(ctx, networkTimeout)
+	head, err := t.l1Client.HeaderByNumber(childCtx, nil)
+	cancel()
+	if err != nil || head == nil {
+		return nil, nil, fmt.Errorf("failed to get L1 head block for fee cap: %w", err)
+	}
+	if opservice.ForBSC {
+		gasFeeCap = txmgr.CalcGasFeeCap(big.NewInt(0), gasTipCap)
+	} else {
+		if head.BaseFee == nil {
+			return nil, nil, fmt.Errorf("failed to get L1 basefee in block %d for fee cap", head.Number)
+		}
+		gasFeeCap = txmgr.CalcGasFeeCap(head.BaseFee, gasTipCap)
+	}
+
+	return gasTipCap, gasFeeCap, nil
+}
+
 // CreateProposalTx transforms an output response into a signed output transaction.
 // It does not send the transaction to the transaction pool.
 func (l *L2OutputSubmitter) CreateProposalTx(ctx context.Context, output *eth.OutputResponse) (*types.Transaction, error) {
@@ -330,21 +365,28 @@ func (l *L2OutputSubmitter) CreateProposalTx(ctx context.Context, output *eth.Ou
 		return nil, err
 	}
 
+	gasTipCap, gasFeeCap, err := l.calcGasTipAndFeeCap(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	opts := &bind.TransactOpts{
 		From: l.from,
 		Signer: func(addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			return l.signerFn(ctx, addr, tx)
 		},
-		Context: ctx,
-		Nonce:   new(big.Int).SetUint64(nonce),
-		NoSend:  true,
+		Context:  ctx,
+		Nonce:    new(big.Int).SetUint64(nonce),
+		GasPrice: big.NewInt(0).Add(gasTipCap, gasFeeCap),
+		NoSend:   true,
 	}
 
 	tx, err := l.l2ooContract.ProposeL2Output(
 		opts,
 		output.OutputRoot,
 		new(big.Int).SetUint64(output.BlockRef.Number),
-		output.Status.CurrentL1.Hash,
+		// output.Status.CurrentL1.Hash,
+		[32]byte{},
 		new(big.Int).SetUint64(output.Status.CurrentL1.Number))
 	if err != nil {
 		l.log.Error("failed to create the ProposeL2Output transaction", "err", err)
