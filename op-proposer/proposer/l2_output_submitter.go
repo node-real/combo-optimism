@@ -369,6 +369,7 @@ func (l *L2OutputSubmitter) CreateProposalTx(ctx context.Context, output *eth.Ou
 	if err != nil {
 		return nil, err
 	}
+	_ = gasTipCap
 
 	opts := &bind.TransactOpts{
 		From: l.from,
@@ -377,7 +378,7 @@ func (l *L2OutputSubmitter) CreateProposalTx(ctx context.Context, output *eth.Ou
 		},
 		Context:  ctx,
 		Nonce:    new(big.Int).SetUint64(nonce),
-		GasPrice: big.NewInt(0).Add(gasTipCap, gasFeeCap),
+		GasPrice: gasFeeCap,
 		NoSend:   true,
 	}
 
