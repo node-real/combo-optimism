@@ -3,6 +3,7 @@ package derive
 import (
 	"context"
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -11,12 +12,14 @@ import (
 	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 
 // L1ReceiptsFetcher fetches L1 header info and receipts for the payload attributes derivation (the info tx and deposits)
 type L1ReceiptsFetcher interface {
 	InfoByHash(ctx context.Context, hash common.Hash) (eth.BlockInfo, error)
 	FetchReceipts(ctx context.Context, blockHash common.Hash) (eth.BlockInfo, types.Receipts, error)
+	InfoAndTxsByHash(ctx context.Context, hash common.Hash) (eth.BlockInfo, types.Transactions, error)
 }
 
 type SystemConfigL2Fetcher interface {
@@ -53,6 +56,14 @@ func (ba *FetchingAttributesBuilder) PreparePayloadAttributes(ctx context.Contex
 		return nil, NewTemporaryError(fmt.Errorf("failed to retrieve L2 parent block: %w", err))
 	}
 
+	var gasPrice *big.Int
+	if opservice.ForBSC {
+		gasPrice, err = ba.prepareAverageGasPrice(ctx, epoch)
+		if err != nil {
+			return nil, NewTemporaryError(fmt.Errorf("failed to prepare average gas price: %w", err))
+		}
+	}
+
 	// If the L1 origin changed this block, then we are in the first block of the epoch. In this
 	// case we need to fetch all transaction receipts from the L1 origin block so we can scan for
 	// user deposits.
@@ -76,7 +87,9 @@ func (ba *FetchingAttributesBuilder) PreparePayloadAttributes(ctx context.Contex
 		if err := UpdateSystemConfigWithL1Receipts(&sysConfig, receipts, ba.cfg); err != nil {
 			return nil, NewCriticalError(fmt.Errorf("failed to apply derived L1 sysCfg updates: %w", err))
 		}
-
+		if opservice.ForBSC {
+			info = newGasPriceWrapper(info, gasPrice)
+		}
 		l1Info = info
 		depositTxs = deposits
 		seqNumber = 0
@@ -87,6 +100,9 @@ func (ba *FetchingAttributesBuilder) PreparePayloadAttributes(ctx context.Contex
 		info, err := ba.l1.InfoByHash(ctx, epoch.Hash)
 		if err != nil {
 			return nil, NewTemporaryError(fmt.Errorf("failed to fetch L1 block info: %w", err))
+		}
+		if opservice.ForBSC {
+			info = newGasPriceWrapper(info, gasPrice)
 		}
 		l1Info = info
 		depositTxs = nil
@@ -117,4 +133,39 @@ func (ba *FetchingAttributesBuilder) PreparePayloadAttributes(ctx context.Contex
 		NoTxPool:              true,
 		GasLimit:              (*eth.Uint64Quantity)(&sysConfig.GasLimit),
 	}, nil
+}
+
+var bscDefaultGasPrice = big.NewInt(5000000000)
+
+func (ba *FetchingAttributesBuilder) prepareAverageGasPrice(ctx context.Context, epoch eth.BlockID) (*big.Int, error) {
+	_, txs, err := ba.l1.InfoAndTxsByHash(ctx, epoch.Hash)
+	if err != nil {
+		return nil, err
+	}
+	var sum big.Int
+	for _, tx := range txs {
+		sum.Add(&sum, tx.GasPrice())
+	}
+	if len(txs) == 0 {
+		return bscDefaultGasPrice, nil
+	}
+	return sum.Div(&sum, big.NewInt(int64(len(txs)))), nil
+}
+
+type gasPriceWrapper struct {
+	eth.BlockInfo
+	gasprice *big.Int
+}
+
+var _ (eth.BlockInfo) = (*gasPriceWrapper)(nil)
+
+func newGasPriceWrapper(info eth.BlockInfo, gasprice *big.Int) *gasPriceWrapper {
+	return &gasPriceWrapper{
+		BlockInfo: info,
+		gasprice:  gasprice,
+	}
+}
+
+func (w *gasPriceWrapper) BaseFee() *big.Int {
+	return w.gasprice
 }
