@@ -57,6 +57,11 @@ jobs:
           OP_BATCHER_IMAGE_REPO: op-batcher
           OP_PROPOSER_IMAGE_REPO: op-proposer
         run: |
+
+          echo "::add-mask::$AWS_ACCESS_KEY_ID"
+          echo "::add-mask::$AWS_SECRET_ACCESS_KEY"
+          echo "::add-mask::$AWS_SESSION_TOKEN"
+          
           OP_NODE_IMAGE_NAME="${ECR_REGISTRY_ID}.dkr.ecr.${REGION}.amazonaws.com/$OP_NODE_IMAGE_REPO:${GITHUB_REF#refs/*/}"
           OP_BATCHER_IMAGE_NAME="${ECR_REGISTRY_ID}.dkr.ecr.${REGION}.amazonaws.com/$OP_BATCHER_IMAGE_REPO:${GITHUB_REF#refs/*/}"
           OP_PROPOSER_IMAGE_NAME="${ECR_REGISTRY_ID}.dkr.ecr.${REGION}.amazonaws.com/$OP_PROPOSER_IMAGE_REPO:${GITHUB_REF#refs/*/}"
