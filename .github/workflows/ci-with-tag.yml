@@ -1,7 +1,7 @@
 name: CI-trigger-by-tag
 
 on:
-  create:
+  push:
     tags:
       - '*'
 env:
