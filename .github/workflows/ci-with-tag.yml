@@ -3,7 +3,7 @@ name: CI-trigger-by-tag
 on:
   create:
     tags:
-      - *
+      - '*'
 
 env:
   REGION: us-east-1
