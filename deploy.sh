@@ -1,28 +1,28 @@
 #!/bin/bash
 
-# L2 chain id, 常用 901
+# L2 chain id, use 901
 export OP_L2_CHAIN_ID=${OP_L2_CHAIN_ID:-"901"}
 
-# OP_DEPLOYER 是部署账户，需要有余额
+# OP_DEPLOYER is deploy account，need balance
 export OP_DEPLOYER_ADDRESS=${OP_DEPLOYER_ADDRESS?"required"}
 export OP_DEPLOYER_PRIVKEY=${OP_DEPLOYER_PRIVKEY?"required"}
 
-# OP_BATCHER，需要有余额，提交 L2 交易信息到 OP_BATCHER_SEQUENCER_BATCH_INBOX_ADDRESS
+# OP_BATCHER，need balance，submit L2 transaction information OP_BATCHER_SEQUENCER_BATCH_INBOX_ADDRESS
 export OP_BATCHER_PRIVKEY=${OP_BATCHER_PRIVKEY?"required"}
 export OP_BATCHER_ADDRESS=${OP_BATCHER_ADDRESS?"required"}
 
-# OP_PROPOSER，需要有余额，提交 L2 交易结果到 L1 合约
+# OP_PROPOSER，need balance，submit L2 transaction result to  L1 contract
 export OP_PROPOSER_PRIVKEY=${OP_PROPOSER_PRIVKEY?"required"}
 export OP_PROPOSER_ADDRESS=${OP_PROPOSER_ADDRESS?"required"}
 
-# 随便一个 EOA 地址，参考 OP_BATCHER 的定义
+# EOA address
 export OP_BATCHER_SEQUENCER_BATCH_INBOX_ADDRESS=${OP_BATCHER_SEQUENCER_BATCH_INBOX_ADDRESS?"required"}
 
 export BSC_TESTNET="https://data-seed-prebsc-1-s1.binance.org:8545"
 export BSC_QANET="http://tf-dex-qa-ec2-bsc-test-alb-1168080131.ap-northeast-1.elb.amazonaws.com:8545"
 export L1_ENDPOINT="$BSC_TESTNET"
 
-# ethereum-optimism/optimism 仓库的根目录
+# ethereum-optimism/optimism root dir
 export OP_ROOT_DIR=${OP_ROOT_DIR?"required"}
 export OP_NETWORK_NAME="bsc-testnet"
 export OP_DATA_DIR=$OP_ROOT_DIR/.$OP_NETWORK_NAME
