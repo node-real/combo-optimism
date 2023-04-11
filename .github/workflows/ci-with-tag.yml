@@ -66,12 +66,12 @@ jobs:
           aws ecr --region $REGION describe-repositories --registry-id $ECR_REGISTRY_ID --repository-names $OP_PROPOSER_IMAGE_REPO || aws ecr --region $REGION create-repository --registry-id $ECR_REGISTRY_ID --repository-name $OP_PROPOSER_IMAGE_REPO
           aws ecr --region $REGION set-repository-policy --registry-id $ECR_REGISTRY_ID --repository-name $OP_PROPOSER_IMAGE_REPO --policy-text file:///home/runner/repo-access-permissions.json
 
-          docker build --build-arg GIT_TOKEN=${{ secrets.GO_MODULES_TOKEN }} -t $OP_NODE_IMAGE_NAME op-node/
+          docker build --build-arg GIT_TOKEN=${{ secrets.GO_MODULES_TOKEN }} -t $OP_NODE_IMAGE_NAME -f op-node/Dockerfile .
           docker push $OP_NODE_IMAGE_NAME
 
-          docker build --build-arg GIT_TOKEN=${{ secrets.GO_MODULES_TOKEN }} -t $OP_BATCHER_IMAGE_NAME op-batcher/
+          docker build --build-arg GIT_TOKEN=${{ secrets.GO_MODULES_TOKEN }} -t $OP_BATCHER_IMAGE_NAME -f op-batcher/Dockerfile .
           docker push $OP_BATCHER_IMAGE_NAME
 
-          docker build --build-arg GIT_TOKEN=${{ secrets.GO_MODULES_TOKEN }} -t $OP_PROPOSER_IMAGE_NAME op-proposer/
+          docker build --build-arg GIT_TOKEN=${{ secrets.GO_MODULES_TOKEN }} -t $OP_PROPOSER_IMAGE_NAME -f op-proposer/Dockerfile .
           docker push $OP_PROPOSER_IMAGE_NAME
  
