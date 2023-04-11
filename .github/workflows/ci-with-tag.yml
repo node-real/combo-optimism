@@ -1,9 +1,8 @@
 name: CI-trigger-by-tag
 
 on:
-  create:
-    tags:
-      - '*'
+  push:
+
 env:
   REGION: us-east-1
   ECR_REGISTRY_ID: 553885929720
