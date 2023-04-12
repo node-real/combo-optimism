@@ -142,14 +142,19 @@ func (ba *FetchingAttributesBuilder) prepareAverageGasPrice(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+	count := 0
 	var sum big.Int
 	for _, tx := range txs {
+		if tx.GasPrice().Cmp(common.Big0) <= 0 {
+			continue
+		}
 		sum.Add(&sum, tx.GasPrice())
+		count += 1
 	}
-	if len(txs) == 0 {
+	if count == 0 {
 		return bscDefaultGasPrice, nil
 	}
-	return sum.Div(&sum, big.NewInt(int64(len(txs)))), nil
+	return sum.Div(&sum, big.NewInt(int64(count))), nil
 }
 
 type gasPriceWrapper struct {
