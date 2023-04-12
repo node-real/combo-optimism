@@ -74,4 +74,11 @@ jobs:
 
           docker build --build-arg GIT_TOKEN=${{ secrets.GO_MODULES_TOKEN }} -t $OP_PROPOSER_IMAGE_NAME -f op-proposer/Dockerfile .
           docker push $OP_PROPOSER_IMAGE_NAME
- 
+      - name: slack notify
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_CHANNEL: op-ci-release-alert
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_MESSAGE: "image tag ${GITHUB_REF#refs/*/} is release"
+          SLACK_TITLE: op-release
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
