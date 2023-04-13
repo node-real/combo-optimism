@@ -38,8 +38,8 @@ module.exports = {
       offset: -200,
     },
     algolia: {
-      appId: '7Q6XITDI0Z',
-      apiKey: '9d55a31a04b210cd26f97deabd161705',
+      appId: 'O9WKE9RMCV',
+      apiKey: '00cf17cba30b374d08d7f7afead974be',
       indexName: 'optimism'
     },
     nav: [
@@ -117,7 +117,7 @@ module.exports = {
       {
         title: "OP Stack",
         collapsable: false,
-        children: [        
+        children: [
           '/',
           [
             '/docs/understand/design-principles.md',
@@ -126,7 +126,7 @@ module.exports = {
           '/docs/understand/landscape.md',
           '/docs/understand/explainer.md'
         ]
-      }, 
+      },
       {
         title: "Releases",
         collapsable: false,
@@ -150,6 +150,7 @@ module.exports = {
           '/docs/build/getting-started.md',
           '/docs/build/conf.md',
           '/docs/build/explorer.md',
+          '/docs/build/sdk.md',
           {
             title: "OP Stack Hacks",
             collapsable: true,
@@ -164,10 +165,10 @@ module.exports = {
                 title: "Sample Hacks",
                 children: [
                   "/docs/build/tutorials/add-attr.md",
-                  "/docs/build/tutorials/new-precomp.md",                
+                  "/docs/build/tutorials/new-precomp.md",
                 ]
-              }  // End of tutorials                      
-            ], 
+              }  // End of tutorials
+            ],
           },    // End of OP Stack hacks
         ],
       },      // End of Building OP Stack Rollups
@@ -185,7 +186,7 @@ module.exports = {
           '/docs/security/faq.md',
           '/docs/security/policy.md',
         ]
-      },        
+      },
     ],  // end of sidebar
   plugins: [
     "@vuepress/pwa",

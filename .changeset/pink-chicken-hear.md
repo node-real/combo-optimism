@@ -2,4 +2,4 @@
 '@eth-optimism/contracts-bedrock': patch
 ---
 
-Print tenderly simulation links during deployment
+Added a contsructor to the System Dictator
