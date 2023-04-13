@@ -8,6 +8,5 @@ ignores: [
   "eslint-plugin-react",
   "@typescript-eslint/eslint-plugin",
   "eslint-config-prettier",
-  "eslint-plugin-prettier",
-  "chai"
+  "eslint-plugin-prettier"
 ]
