@@ -32,6 +32,13 @@ const config: HardhatUserConfig = {
         'ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
       ],
     },
+    'bsc-localnet': {
+      live: false,
+      url: 'http://localhost:8545',
+      accounts: [
+        '0x953dbe85f02d84377f90a6eb6d8a6dd128aa50f69c4671d32414b139040be24b',
+      ],
+    },
     devnetL2: {
       live: false,
       url: process.env.RPC_URL || 'http://localhost:9545',
