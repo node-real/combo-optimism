@@ -103,6 +103,7 @@ func (t *TransactionManager) CraftTx(ctx context.Context, data []byte) (*types.T
 	if err != nil {
 		return nil, err
 	}
+	_ = gasTipCap
 
 	childCtx, cancel := context.WithTimeout(ctx, networkTimeout)
 	nonce, err := t.l1Client.NonceAt(childCtx, t.senderAddress, nil)
@@ -114,7 +115,7 @@ func (t *TransactionManager) CraftTx(ctx context.Context, data []byte) (*types.T
 	rawTx := &types.LegacyTx{
 		Nonce:    nonce,
 		To:       &t.batchInboxAddress,
-		GasPrice: big.NewInt(0).Add(gasTipCap, gasFeeCap),
+		GasPrice: gasFeeCap,
 		Data:     data,
 	}
 	t.log.Info("creating tx", "to", rawTx.To, "from", t.senderAddress)
