@@ -178,6 +178,27 @@ func TestRandomConfigDescription(t *testing.T) {
 		// Don't make this test fail only in Australia :')
 		require.Contains(t, out, fmt.Sprintf("Regolith: @ %d ~ ", x))
 	})
+	t.Run("average_base_fee unset", func(t *testing.T) {
+		config := randConfig()
+		config.AverageBaseFeeTime = nil
+		out := config.Description(nil)
+		require.Contains(t, out, "AverageBaseFee: (not configured)")
+	})
+	t.Run("average_base_fee genesis", func(t *testing.T) {
+		config := randConfig()
+		config.AverageBaseFeeTime = new(uint64)
+		out := config.Description(nil)
+		require.Contains(t, out, "AverageBaseFee: @ genesis")
+	})
+	t.Run("average_base_fee date", func(t *testing.T) {
+		config := randConfig()
+		x := uint64(1677119335)
+		config.AverageBaseFeeTime = &x
+		out := config.Description(nil)
+		// Don't check human-readable part of the date, it's timezone-dependent.
+		// Don't make this test fail only in Australia :')
+		require.Contains(t, out, fmt.Sprintf("AverageBaseFee: @ %d ~ ", x))
+	})
 }
 
 // TestRegolithActivation tests the activation condition of the Regolith upgrade.
@@ -195,6 +216,23 @@ func TestRegolithActivation(t *testing.T) {
 	require.False(t, config.IsRegolith(122))
 	require.True(t, config.IsRegolith(123))
 	require.True(t, config.IsRegolith(124))
+}
+
+// TestAverageBaseFeeActivation tests the activation condition of the AverageBaseFee upgrade.
+func TestAverageBaseFeeActivation(t *testing.T) {
+	config := randConfig()
+	config.AverageBaseFeeTime = nil
+	require.False(t, config.IsAverageBaseFee(0), "false if nil time, even if checking 0")
+	require.False(t, config.IsAverageBaseFee(123456), "false if nil time")
+	config.AverageBaseFeeTime = new(uint64)
+	require.True(t, config.IsAverageBaseFee(0), "true at zero")
+	require.True(t, config.IsAverageBaseFee(123456), "true for any")
+	x := uint64(123)
+	config.AverageBaseFeeTime = &x
+	require.False(t, config.IsAverageBaseFee(0))
+	require.False(t, config.IsAverageBaseFee(122))
+	require.True(t, config.IsAverageBaseFee(123))
+	require.True(t, config.IsAverageBaseFee(124))
 }
 
 type mockL2Client struct {

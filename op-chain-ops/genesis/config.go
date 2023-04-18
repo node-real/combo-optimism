@@ -73,6 +73,8 @@ type DeployConfig struct {
 
 	// Seconds after genesis block that Regolith hard fork activates. 0 to activate at genesis. Nil to disable regolith
 	L2GenesisRegolithTimeOffset *hexutil.Uint64 `json:"l2GenesisRegolithTimeOffset,omitempty"`
+	// Seconds after genesis block that AverageBaseFee hard fork activates. 0 to activate at genesis. Nil to disable averageBaseFee
+	L2GenesisAverageBaseFeeTimeOffset *hexutil.Uint64 `json:"l2GenesisAverageBaseFeeTimeOffset,omitempty"`
 
 	// Owner of the ProxyAdmin predeploy
 	ProxyAdminOwner common.Address `json:"proxyAdminOwner"`
@@ -310,6 +312,17 @@ func (d *DeployConfig) RegolithTime(genesisTime uint64) *uint64 {
 	return &v
 }
 
+func (d *DeployConfig) AverageBaseFeeTime(genesisTime uint64) *uint64 {
+	if d.L2GenesisAverageBaseFeeTimeOffset == nil {
+		return nil
+	}
+	v := uint64(0)
+	if offset := *d.L2GenesisAverageBaseFeeTimeOffset; offset > 0 {
+		v = genesisTime + uint64(offset)
+	}
+	return &v
+}
+
 // RollupConfig converts a DeployConfig to a rollup.Config
 func (d *DeployConfig) RollupConfig(l1StartBlock *types.Block, l2GenesisBlockHash common.Hash, l2GenesisBlockNumber uint64) (*rollup.Config, error) {
 	if d.OptimismPortalProxy == (common.Address{}) {
@@ -347,6 +360,7 @@ func (d *DeployConfig) RollupConfig(l1StartBlock *types.Block, l2GenesisBlockHas
 		DepositContractAddress: d.OptimismPortalProxy,
 		L1SystemConfigAddress:  d.SystemConfigProxy,
 		RegolithTime:           d.RegolithTime(l1StartBlock.Time()),
+		AverageBaseFeeTime:     d.AverageBaseFeeTime(l1StartBlock.Time()),
 	}, nil
 }
 
@@ -448,8 +462,8 @@ func NewL2StorageConfig(config *DeployConfig, block *types.Block) (state.Storage
 		"msgNonce":         0,
 	}
 	storage["L1Block"] = state.StorageValues{
-		"number":    block.Number(),
-		"timestamp": block.Time(),
+		"number":         block.Number(),
+		"timestamp":      block.Time(),
 		"basefee":        block.BaseFee(),
 		"hash":           block.Hash(),
 		"sequenceNumber": 0,
