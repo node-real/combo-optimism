@@ -8,6 +8,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
+
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 
 // HeadSignalFn is used as callback function to accept head-signals
@@ -48,7 +50,10 @@ func WatchHeadChanges(ctx context.Context, src NewHeadSource, fn HeadSignalFn) (
 
 type L1BlockRefsSource interface {
 	L1BlockRefByLabel(ctx context.Context, label BlockLabel) (L1BlockRef, error)
+	L1BlockRefByNumber(ctx context.Context, num uint64) (L1BlockRef, error)
 }
+
+var finalizedBlockNumberForBSC uint64 = 15
 
 // PollBlockChanges opens a polling loop to fetch the L1 block reference with the given label,
 // on provided interval and with request timeout. Results are returned with provided callback fn,
@@ -72,7 +77,24 @@ func PollBlockChanges(ctx context.Context, log log.Logger, src L1BlockRefsSource
 				if err != nil {
 					log.Warn("failed to poll L1 block", "label", label, "err", err)
 				} else {
-					fn(ctx, ref)
+					if opservice.ForBSC {
+						reqCtx, reqCancel := context.WithTimeout(ctx, timeout)
+						number := ref.Number
+						if number < finalizedBlockNumberForBSC {
+							number = 0
+						} else {
+							number -= finalizedBlockNumberForBSC
+						}
+						ref, err := src.L1BlockRefByNumber(reqCtx, number)
+						reqCancel()
+						if err != nil {
+							log.Warn("failed to poll L1 block", "number", number, "err", err)
+						} else {
+							fn(ctx, ref)
+						}
+					} else {
+						fn(ctx, ref)
+					}
 				}
 			case <-ctx.Done():
 				return ctx.Err()

@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+var ForBSC = true
+
 func PrefixEnvVar(prefix, suffix string) string {
 	return prefix + "_" + suffix
 }
