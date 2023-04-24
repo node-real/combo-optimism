@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 
 const (
@@ -54,11 +55,13 @@ func (info *L1BlockInfo) MarshalBinary() ([]byte, error) {
 	offset += 32
 	binary.BigEndian.PutUint64(data[offset+24:offset+32], info.Time)
 	offset += 32
-	// Ensure that the baseFee is not too large.
-	if info.BaseFee.BitLen() > 256 {
-		return nil, fmt.Errorf("base fee exceeds 256 bits: %d", info.BaseFee)
+	if info.BaseFee != nil {
+		// Ensure that the baseFee is not too large.
+		if info.BaseFee.BitLen() > 256 {
+			return nil, fmt.Errorf("base fee exceeds 256 bits: %d", info.BaseFee)
+		}
+		info.BaseFee.FillBytes(data[offset : offset+32])
 	}
-	info.BaseFee.FillBytes(data[offset : offset+32])
 	offset += 32
 	copy(data[offset:offset+32], info.BlockHash.Bytes())
 	offset += 32
@@ -117,6 +120,8 @@ func L1InfoDepositTxData(data []byte) (L1BlockInfo, error) {
 	return info, err
 }
 
+var BSCFakeBaseFee = big.NewInt(5000000000)
+
 // L1InfoDeposit creates a L1 Info deposit transaction based on the L1 block,
 // and the L2 block-height difference with the start of the epoch.
 func L1InfoDeposit(seqNumber uint64, block eth.BlockInfo, sysCfg eth.SystemConfig, regolith bool) (*types.DepositTx, error) {
@@ -129,6 +134,9 @@ func L1InfoDeposit(seqNumber uint64, block eth.BlockInfo, sysCfg eth.SystemConfi
 		BatcherAddr:    sysCfg.BatcherAddr,
 		L1FeeOverhead:  sysCfg.Overhead,
 		L1FeeScalar:    sysCfg.Scalar,
+	}
+	if opservice.ForBSC {
+		infoDat.BaseFee = BSCFakeBaseFee
 	}
 	data, err := infoDat.MarshalBinary()
 	if err != nil {

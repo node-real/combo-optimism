@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 
 var enableParallelTesting bool = true
@@ -13,6 +14,7 @@ func init() {
 	if os.Getenv("OP_E2E_DISABLE_PARALLEL") == "true" {
 		enableParallelTesting = false
 	}
+	opservice.ForBSC = false
 }
 
 func parallel(t e2eutils.TestingBase) {
