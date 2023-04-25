@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
-	observice "github.com/ethereum-optimism/optimism/op-service"
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 	"github.com/ethereum-optimism/optimism/op-service/txmgr/metrics"
 )
 
@@ -165,7 +165,7 @@ func (m *SimpleTxManager) craftTx(ctx context.Context, candidate TxCandidate) (*
 	m.metr.RecordNonce(nonce)
 
 	var tx *types.Transaction
-	if observice.ForBSC {
+	if opservice.ForBSC {
 		rawTx := &types.LegacyTx{
 			Nonce:    nonce,
 			To:       candidate.To,
@@ -424,7 +424,7 @@ func (m *SimpleTxManager) increaseGasPrice(ctx context.Context, tx *types.Transa
 	}
 
 	var rtx *types.Transaction
-	if observice.ForBSC {
+	if opservice.ForBSC {
 		rawTx := &types.LegacyTx{
 			Nonce:    tx.Nonce(),
 			Gas:      tx.Gas(),
@@ -476,7 +476,7 @@ func (m *SimpleTxManager) suggestGasPriceCaps(ctx context.Context) (*big.Int, *b
 		m.metr.RPCError()
 		return nil, nil, fmt.Errorf("failed to fetch the suggested basefee: %w", err)
 	} else if head.BaseFee == nil {
-		if observice.ForBSC {
+		if opservice.ForBSC {
 			return tip, big.NewInt(0), nil
 		}
 		return nil, nil, errors.New("txmgr does not support pre-london blocks that do not have a basefee")

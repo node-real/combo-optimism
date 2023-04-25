@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum-optimism/optimism/op-node/testlog"
-	observice "github.com/ethereum-optimism/optimism/op-service"
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 	"github.com/ethereum-optimism/optimism/op-service/txmgr/metrics"
 
 	"github.com/ethereum/go-ethereum"
@@ -740,7 +740,7 @@ func doGasPriceIncrease(t *testing.T, txTipCap, txFeeCap, newTip, newBaseFee int
 }
 
 func TestIncreaseGasPrice(t *testing.T) {
-	observice.ForBSC = false
+	opservice.ForBSC = false
 	// t.Parallel()
 	tests := []struct {
 		name string
