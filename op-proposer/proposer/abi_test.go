@@ -67,7 +67,8 @@ func TestManualABIPacking(t *testing.T) {
 		opts,
 		output.OutputRoot,
 		new(big.Int).SetUint64(output.BlockRef.Number),
-		output.Status.CurrentL1.Hash,
+		// output.Status.CurrentL1.Hash,
+		[32]byte{},
 		new(big.Int).SetUint64(output.Status.CurrentL1.Number))
 	require.NoError(t, err)
 
