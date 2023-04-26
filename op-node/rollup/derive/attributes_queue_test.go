@@ -16,14 +16,14 @@ import (
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/testlog"
 	"github.com/ethereum-optimism/optimism/op-node/testutils"
-	observice "github.com/ethereum-optimism/optimism/op-service"
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 
 // TestAttributesQueue checks that it properly uses the PreparePayloadAttributes function
 // (which is well tested) and that it properly sets NoTxPool and adds in the candidate
 // transactions.
 func TestAttributesQueue(t *testing.T) {
-	observice.ForBSC = false
+	opservice.ForBSC = false
 	// test config, only init the necessary fields
 	cfg := &rollup.Config{
 		BlockTime:              2,
