@@ -34,6 +34,8 @@ type Sequencer struct {
 	log    log.Logger
 	config *rollup.Config
 
+	coordinatorClient *rollup.CoordinatorClient
+
 	engine derive.ResettableEngineControl
 
 	attrBuilder      derive.AttributesBuilder
@@ -47,15 +49,16 @@ type Sequencer struct {
 	nextAction time.Time
 }
 
-func NewSequencer(log log.Logger, cfg *rollup.Config, engine derive.ResettableEngineControl, attributesBuilder derive.AttributesBuilder, l1OriginSelector L1OriginSelectorIface, metrics SequencerMetrics) *Sequencer {
+func NewSequencer(log log.Logger, cfg *rollup.Config, engine derive.ResettableEngineControl, coordinatorClient *rollup.CoordinatorClient, attributesBuilder derive.AttributesBuilder, l1OriginSelector L1OriginSelectorIface, metrics SequencerMetrics) *Sequencer {
 	return &Sequencer{
-		log:              log,
-		config:           cfg,
-		engine:           engine,
-		timeNow:          time.Now,
-		attrBuilder:      attributesBuilder,
-		l1OriginSelector: l1OriginSelector,
-		metrics:          metrics,
+		log:               log,
+		config:            cfg,
+		engine:            engine,
+		coordinatorClient: coordinatorClient,
+		timeNow:           time.Now,
+		attrBuilder:       attributesBuilder,
+		l1OriginSelector:  l1OriginSelector,
+		metrics:           metrics,
 	}
 }
 
@@ -83,6 +86,12 @@ func (d *Sequencer) StartBuildingBlock(ctx context.Context) error {
 	attrs, err := d.attrBuilder.PreparePayloadAttributes(fetchCtx, l2Head, l1Origin.ID())
 	if err != nil {
 		return err
+	}
+
+	// Request coordinator for the permission to start building a new block.
+	// If we are not allowed to build a block, then we wait for the next block time.
+	if d.coordinatorClient != nil && !d.coordinatorClient.RequestBuildingBlock() {
+		return fmt.Errorf("failed to request permission for building block")
 	}
 
 	// If our next L2 block timestamp is beyond the Sequencer drift threshold, then we must produce
