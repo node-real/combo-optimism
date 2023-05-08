@@ -62,7 +62,7 @@ func runCrossLayerUserTest(gt *testing.T, test regolithScheduledTest) {
 		OutputOracleAddr:  sd.DeploymentsL1.L2OutputOracleProxy,
 		ProposerKey:       dp.Secrets.Proposer,
 		AllowNonFinalized: true,
-	}, miner.EthClient(), seq.RollupClient())
+	}, miner.EthClient(), seq.RollupClients())
 
 	// need to start derivation before we can make L2 blocks
 	seq.ActL2PipelineFull(t)

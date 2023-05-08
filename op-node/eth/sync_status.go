@@ -35,4 +35,6 @@ type SyncStatus struct {
 	// UnsafeL2SyncTarget points to the first unprocessed unsafe L2 block.
 	// It may be zeroed if there is no targeted block.
 	UnsafeL2SyncTarget L2BlockRef `json:"queued_unsafe_l2"`
+	// HightestIndex is the highest index of op-node. only used in op-batcher and op-proposer for HA.
+	HightestIndex int64 `json:"hightest_index"`
 }

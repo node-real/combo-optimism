@@ -1,6 +1,7 @@
 package batcher
 
 import (
+	"errors"
 	"time"
 
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -22,12 +23,13 @@ type Config struct {
 	log        log.Logger
 	metr       metrics.Metricer
 	L1Client   *ethclient.Client
-	L2Client   *ethclient.Client
-	RollupNode *sources.RollupClient
+	L2Clients  []*ethclient.Client
+	RollupNode *sources.RollupClients
 	TxManager  txmgr.TxManager
 
-	NetworkTimeout time.Duration
-	PollInterval   time.Duration
+	NetworkTimeout     time.Duration
+	PollInterval       time.Duration
+	SubUnsafeHeadNumbe uint64
 
 	// RollupConfig is queried at startup
 	Rollup *rollup.Config
@@ -43,6 +45,9 @@ func (c *Config) Check() error {
 	}
 	if err := c.Channel.Check(); err != nil {
 		return err
+	}
+	if len(c.L2Clients) != len(c.RollupNode.Rpcs) {
+		return errors.New("L2Clients and RollupNode.Rpcs must have the same length")
 	}
 	return nil
 }
@@ -89,7 +94,8 @@ type CLIConfig struct {
 	// compression algorithm.
 	ApproxComprRatio float64
 
-	Stopped bool
+	Stopped            bool
+	SubUnsafeHeadNumbe uint64
 
 	TxMgrConfig   txmgr.CLIConfig
 	RPCConfig     rpc.CLIConfig
@@ -134,6 +140,7 @@ func NewConfig(ctx *cli.Context) CLIConfig {
 		TargetNumFrames:    ctx.GlobalInt(flags.TargetNumFramesFlag.Name),
 		ApproxComprRatio:   ctx.GlobalFloat64(flags.ApproxComprRatioFlag.Name),
 		Stopped:            ctx.GlobalBool(flags.StoppedFlag.Name),
+		SubUnsafeHeadNumbe: ctx.GlobalUint64(flags.SubUnsafeHeadNumberFlag.Name),
 		TxMgrConfig:        txmgr.ReadCLIConfig(ctx),
 		RPCConfig:          rpc.ReadCLIConfig(ctx),
 		LogConfig:          oplog.ReadCLIConfig(ctx),

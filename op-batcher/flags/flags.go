@@ -86,6 +86,11 @@ var (
 		Usage:  "Initialize the batcher in a stopped state. The batcher can be started using the admin_startBatcher RPC",
 		EnvVar: opservice.PrefixEnvVar(envVarPrefix, "STOPPED"),
 	}
+	SubUnsafeHeadNumberFlag = cli.Uint64Flag{
+		Name:  "sub-unsafehead-number",
+		Usage: "The number of blocks sub from unsafe head",
+		Value: 0,
+	}
 	// Legacy Flags
 	SequencerHDPathFlag = txmgr.SequencerHDPathFlag
 )

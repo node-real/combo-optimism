@@ -155,6 +155,10 @@ func (s *L2Verifier) RollupClient() *sources.RollupClient {
 	return sources.NewRollupClient(s.RPCClient())
 }
 
+func (s *L2Verifier) RollupClients() *sources.RollupClients {
+	return sources.NewRollupClients([]*sources.RollupClient{sources.NewRollupClient(s.RPCClient())})
+}
+
 func (s *L2Verifier) RPCClient() client.RPC {
 	cl := rpc.DialInProc(s.rpc)
 	return testutils.RPCErrFaker{

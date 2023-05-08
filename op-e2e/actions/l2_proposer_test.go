@@ -32,7 +32,7 @@ func TestProposer(gt *testing.T) {
 		OutputOracleAddr:  sd.DeploymentsL1.L2OutputOracleProxy,
 		ProposerKey:       dp.Secrets.Proposer,
 		AllowNonFinalized: false,
-	}, miner.EthClient(), sequencer.RollupClient())
+	}, miner.EthClient(), sequencer.RollupClients())
 
 	// L1 block
 	miner.ActEmptyBlock(t)

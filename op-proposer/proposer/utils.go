@@ -3,6 +3,7 @@ package proposer
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ethereum-optimism/optimism/op-node/client"
@@ -37,6 +38,22 @@ func dialRollupClientWithTimeout(ctx context.Context, url string) (*sources.Roll
 	}
 
 	return sources.NewRollupClient(client.NewBaseRPCClient(rpcCl)), nil
+}
+
+func dialRollupClientsWithTimeout(ctx context.Context, url string) (*sources.RollupClients, error) {
+	urls := strings.Split(url, ";")
+
+	clients := make([]*sources.RollupClient, 0, len(urls))
+	for _, url := range urls {
+		client, err := dialRollupClientWithTimeout(ctx, url)
+		if err != nil {
+			return nil, err
+		}
+
+		clients = append(clients, client)
+	}
+
+	return sources.NewRollupClients(clients), nil
 }
 
 // parseAddress parses an ETH address from a hex string. This method will fail if

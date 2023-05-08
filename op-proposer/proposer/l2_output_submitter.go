@@ -120,7 +120,8 @@ type L2OutputSubmitter struct {
 	cancel context.CancelFunc
 
 	// RollupClient is used to retrieve output roots from
-	rollupClient *sources.RollupClient
+	rollupClients *sources.RollupClients
+	hightestIndex int64
 
 	l2ooContract     *bindings.L2OutputOracleCaller
 	l2ooContractAddr common.Address
@@ -164,7 +165,7 @@ func NewL2OutputSubmitterConfigFromCLIConfig(cfg CLIConfig, l log.Logger, m metr
 		return nil, err
 	}
 
-	rollupClient, err := dialRollupClientWithTimeout(ctx, cfg.RollupRpc)
+	rollupClients, err := dialRollupClientsWithTimeout(ctx, cfg.RollupRpc)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +175,7 @@ func NewL2OutputSubmitterConfigFromCLIConfig(cfg CLIConfig, l log.Logger, m metr
 		PollInterval:       cfg.PollInterval,
 		NetworkTimeout:     cfg.TxMgrConfig.NetworkTimeout,
 		L1Client:           l1Client,
-		RollupClient:       rollupClient,
+		RollupClients:      rollupClients,
 		AllowNonFinalized:  cfg.AllowNonFinalized,
 		TxManager:          txManager,
 	}, nil
@@ -214,7 +215,7 @@ func NewL2OutputSubmitter(cfg Config, l log.Logger, m metrics.Metricer) (*L2Outp
 		cancel: cancel,
 		metr:   m,
 
-		rollupClient: cfg.RollupClient,
+		rollupClients: cfg.RollupClients,
 
 		l2ooContract:     l2ooContract,
 		l2ooContractAddr: cfg.L2OutputOracleAddr,
@@ -255,11 +256,12 @@ func (l *L2OutputSubmitter) FetchNextOutputInfo(ctx context.Context) (*eth.Outpu
 	// Fetch the current L2 heads
 	cCtx, cancel = context.WithTimeout(ctx, l.networkTimeout)
 	defer cancel()
-	status, err := l.rollupClient.SyncStatus(cCtx)
+	status, err := l.rollupClients.SyncStatus(cCtx)
 	if err != nil {
 		l.log.Error("proposer unable to get sync status", "err", err)
 		return nil, false, err
 	}
+	l.hightestIndex = status.HightestIndex
 	// Use either the finalized or safe head depending on the config. Finalized head is default & safer.
 	var currentBlockNumber *big.Int
 	if l.allowNonFinalized {
@@ -279,7 +281,7 @@ func (l *L2OutputSubmitter) FetchNextOutputInfo(ctx context.Context) (*eth.Outpu
 func (l *L2OutputSubmitter) fetchOuput(ctx context.Context, block *big.Int) (*eth.OutputResponse, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, l.networkTimeout)
 	defer cancel()
-	output, err := l.rollupClient.OutputAtBlock(ctx, block.Uint64())
+	output, err := l.rollupClients.Rpcs[l.hightestIndex].OutputAtBlock(ctx, block.Uint64())
 	if err != nil {
 		l.log.Error("failed to fetch output at block %d: %w", block, err)
 		return nil, false, err

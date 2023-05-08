@@ -25,7 +25,7 @@ type Config struct {
 	NetworkTimeout     time.Duration
 	TxManager          txmgr.TxManager
 	L1Client           *ethclient.Client
-	RollupClient       *sources.RollupClient
+	RollupClients      *sources.RollupClients
 	AllowNonFinalized  bool
 }
 

@@ -48,14 +48,14 @@ func (f fakeTxMgr) Send(_ context.Context, _ txmgr.TxCandidate) (*types.Receipt,
 	panic("unimplemented")
 }
 
-func NewL2Proposer(t Testing, log log.Logger, cfg *ProposerCfg, l1 *ethclient.Client, rollupCl *sources.RollupClient) *L2Proposer {
+func NewL2Proposer(t Testing, log log.Logger, cfg *ProposerCfg, l1 *ethclient.Client, rollupCl *sources.RollupClients) *L2Proposer {
 
 	proposerCfg := proposer.Config{
 		L2OutputOracleAddr: cfg.OutputOracleAddr,
 		PollInterval:       time.Second,
 		NetworkTimeout:     time.Second,
 		L1Client:           l1,
-		RollupClient:       rollupCl,
+		RollupClients:      rollupCl,
 		AllowNonFinalized:  cfg.AllowNonFinalized,
 		// We use custom signing here instead of using the transaction manager.
 		TxManager: fakeTxMgr{from: crypto.PubkeyToAddress(cfg.ProposerKey.PublicKey)},

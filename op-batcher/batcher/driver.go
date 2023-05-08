@@ -39,6 +39,8 @@ type BatchSubmitter struct {
 	lastStoredBlock eth.BlockID
 	lastL1Tip       eth.L1BlockRef
 
+	hightestIndex int64
+
 	state *channelManager
 }
 
@@ -54,17 +56,17 @@ func NewBatchSubmitterFromCLIConfig(cfg CLIConfig, l log.Logger, m metrics.Metri
 		return nil, err
 	}
 
-	l2Client, err := dialEthClientWithTimeout(ctx, cfg.L2EthRpc)
+	l2Clients, err := dialEthClientsWithTimeout(ctx, cfg.L2EthRpc)
 	if err != nil {
 		return nil, err
 	}
 
-	rollupClient, err := dialRollupClientWithTimeout(ctx, cfg.RollupRpc)
+	rollupClients, err := dialRollupClientsWithTimeout(ctx, cfg.RollupRpc)
 	if err != nil {
 		return nil, err
 	}
 
-	rcfg, err := rollupClient.RollupConfig(ctx)
+	rcfg, err := rollupClients.RollupConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("querying rollup config: %w", err)
 	}
@@ -75,13 +77,14 @@ func NewBatchSubmitterFromCLIConfig(cfg CLIConfig, l log.Logger, m metrics.Metri
 	}
 
 	batcherCfg := Config{
-		L1Client:       l1Client,
-		L2Client:       l2Client,
-		RollupNode:     rollupClient,
-		PollInterval:   cfg.PollInterval,
-		NetworkTimeout: cfg.TxMgrConfig.NetworkTimeout,
-		TxManager:      txManager,
-		Rollup:         rcfg,
+		L1Client:           l1Client,
+		L2Clients:          l2Clients,
+		RollupNode:         rollupClients,
+		PollInterval:       cfg.PollInterval,
+		NetworkTimeout:     cfg.TxMgrConfig.NetworkTimeout,
+		SubUnsafeHeadNumbe: cfg.SubUnsafeHeadNumbe,
+		TxManager:          txManager,
+		Rollup:             rcfg,
 		Channel: ChannelConfig{
 			SeqWindowSize:      rcfg.SeqWindowSize,
 			ChannelTimeout:     rcfg.ChannelTimeout,
@@ -195,6 +198,11 @@ func (l *BatchSubmitter) loadBlocksIntoState(ctx context.Context) {
 		return
 	}
 
+	end.Number -= l.SubUnsafeHeadNumbe
+	if start.Number >= end.Number {
+		return
+	}
+
 	var latestBlock *types.Block
 	// Add all blocks to "state"
 	for i := start.Number + 1; i < end.Number+1; i++ {
@@ -225,7 +233,7 @@ func (l *BatchSubmitter) loadBlocksIntoState(ctx context.Context) {
 func (l *BatchSubmitter) loadBlockIntoState(ctx context.Context, blockNumber uint64) (*types.Block, error) {
 	ctx, cancel := context.WithTimeout(ctx, l.NetworkTimeout)
 	defer cancel()
-	block, err := l.L2Client.BlockByNumber(ctx, new(big.Int).SetUint64(blockNumber))
+	block, err := l.L2Clients[l.hightestIndex].BlockByNumber(ctx, new(big.Int).SetUint64(blockNumber))
 	if err != nil {
 		return nil, fmt.Errorf("getting L2 block: %w", err)
 	}
@@ -248,6 +256,7 @@ func (l *BatchSubmitter) calculateL2BlockRangeToStore(ctx context.Context) (eth.
 	if err != nil {
 		return eth.BlockID{}, eth.BlockID{}, fmt.Errorf("failed to get sync status: %w", err)
 	}
+	l.hightestIndex = syncStatus.HightestIndex
 	if syncStatus.HeadL1 == (eth.L1BlockRef{}) {
 		return eth.BlockID{}, eth.BlockID{}, errors.New("empty sync status")
 	}
