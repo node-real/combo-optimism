@@ -316,7 +316,8 @@ func proposeL2OutputTxData(abi *abi.ABI, output *eth.OutputResponse) ([]byte, er
 		"proposeL2Output",
 		output.OutputRoot,
 		new(big.Int).SetUint64(output.BlockRef.Number),
-		output.Status.CurrentL1.Hash,
+		// output.Status.CurrentL1.Hash,
+		[32]byte{},
 		new(big.Int).SetUint64(output.Status.CurrentL1.Number))
 }
 
