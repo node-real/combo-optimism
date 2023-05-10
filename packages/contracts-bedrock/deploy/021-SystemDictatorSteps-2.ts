@@ -10,11 +10,11 @@ import '@nomiclabs/hardhat-ethers'
 import {
   assertContractVariable,
   getContractsFromArtifacts,
-  jsonifyTransaction,
+  printJsonTransaction,
   isStep,
   doStep,
-  getTenderlySimulationLink,
-  getCastCommand,
+  printTenderlySimulationLink,
+  printCastCommand,
 } from '../src/deploy-utils'
 
 const deployFn: DeployFunction = async (hre) => {
@@ -116,10 +116,8 @@ const deployFn: DeployFunction = async (hre) => {
         'BondManager',
       ]
       for (const dead of deads) {
-        assert(
-          (await AddressManager.getAddress(dead)) ===
-            ethers.constants.AddressZero
-        )
+        const addr = await AddressManager.getAddress(dead)
+        assert(addr === ethers.constants.AddressZero)
       }
     },
   })
@@ -182,6 +180,8 @@ const deployFn: DeployFunction = async (hre) => {
         false // do not pause the the OptimismPortal when initializing
       )
     } else {
+      // pause the OptimismPortal when initializing
+      const optimismPortalPaused = true
       const tx = await SystemDictator.populateTransaction.updateDynamicConfig(
         {
           l2OutputOracleStartingBlockNumber:
@@ -189,14 +189,26 @@ const deployFn: DeployFunction = async (hre) => {
           l2OutputOracleStartingTimestamp:
             hre.deployConfig.l2OutputOracleStartingTimestamp,
         },
-        true
+        optimismPortalPaused
       )
       console.log(`Please update dynamic oracle config...`)
+      console.log(
+        JSON.stringify(
+          {
+            l2OutputOracleStartingBlockNumber:
+              hre.deployConfig.l2OutputOracleStartingBlockNumber,
+            l2OutputOracleStartingTimestamp:
+              hre.deployConfig.l2OutputOracleStartingTimestamp,
+            optimismPortalPaused,
+          },
+          null,
+          2
+        )
+      )
       console.log(`MSD address: ${SystemDictator.address}`)
-      console.log(`JSON:`)
-      console.log(jsonifyTransaction(tx))
-      console.log(getCastCommand(tx))
-      console.log(await getTenderlySimulationLink(SystemDictator.provider, tx))
+      printJsonTransaction(tx)
+      printCastCommand(tx)
+      await printTenderlySimulationLink(SystemDictator.provider, tx)
     }
 
     await awaitCondition(
@@ -234,7 +246,7 @@ const deployFn: DeployFunction = async (hre) => {
       )
       const resourceParams = await OptimismPortal.params()
       assert(
-        resourceParams.prevBaseFee.eq(await OptimismPortal.INITIAL_BASE_FEE()),
+        resourceParams.prevBaseFee.eq(ethers.utils.parseUnits('1', 'gwei')),
         `OptimismPortal was not initialized with the correct initial base fee`
       )
       assert(
@@ -305,10 +317,9 @@ const deployFn: DeployFunction = async (hre) => {
       const tx = await OptimismPortal.populateTransaction.unpause()
       console.log(`Please unpause the OptimismPortal...`)
       console.log(`OptimismPortal address: ${OptimismPortal.address}`)
-      console.log(`JSON:`)
-      console.log(jsonifyTransaction(tx))
-      console.log(getCastCommand(tx))
-      console.log(await getTenderlySimulationLink(SystemDictator.provider, tx))
+      printJsonTransaction(tx)
+      printCastCommand(tx)
+      await printTenderlySimulationLink(SystemDictator.provider, tx)
     }
 
     await awaitCondition(
@@ -335,10 +346,9 @@ const deployFn: DeployFunction = async (hre) => {
       const tx = await SystemDictator.populateTransaction.finalize()
       console.log(`Please finalize deployment...`)
       console.log(`MSD address: ${SystemDictator.address}`)
-      console.log(`JSON:`)
-      console.log(jsonifyTransaction(tx))
-      console.log(getCastCommand(tx))
-      console.log(await getTenderlySimulationLink(SystemDictator.provider, tx))
+      printJsonTransaction(tx)
+      printCastCommand(tx)
+      await printTenderlySimulationLink(SystemDictator.provider, tx)
     }
 
     await awaitCondition(
@@ -357,6 +367,6 @@ const deployFn: DeployFunction = async (hre) => {
   }
 }
 
-deployFn.tags = ['SystemDictatorSteps', 'phase2']
+deployFn.tags = ['SystemDictatorSteps', 'phase2', 'l1']
 
 export default deployFn

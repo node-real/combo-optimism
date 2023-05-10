@@ -72,6 +72,9 @@ func PollBlockChanges(ctx context.Context, log log.Logger, src L1BlockRefsSource
 			select {
 			case <-ticker.C:
 				reqCtx, reqCancel := context.WithTimeout(ctx, timeout)
+				if opservice.ForBSC {
+					label = Unsafe
+				}
 				ref, err := src.L1BlockRefByLabel(reqCtx, label)
 				reqCancel()
 				if err != nil {
