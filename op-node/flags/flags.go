@@ -209,7 +209,7 @@ var (
 	}
 	CoordinatorEnabledFlag = cli.BoolFlag{
 		Name:     "coordinator.enabled",
-		Usage:    "Enable the coordinator",
+		Usage:    "Enable the external coordinator mode",
 		EnvVar:   prefixEnvVar("COORDINATOR_ENABLED"),
 		Required: false,
 	}

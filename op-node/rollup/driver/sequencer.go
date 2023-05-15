@@ -64,6 +64,12 @@ func NewSequencer(log log.Logger, cfg *rollup.Config, engine derive.ResettableEn
 
 // StartBuildingBlock initiates a block building job on top of the given L2 head, safe and finalized blocks, and using the provided l1Origin.
 func (d *Sequencer) StartBuildingBlock(ctx context.Context) error {
+	// External coordinator mode (configured by --coordinator.enabled=true): Sequencer requests permission to build
+	// new blocks from the external coordinator by calling RequestBuildingBlock().
+	if d.coordinatorClient != nil && !d.coordinatorClient.RequestBuildingBlock() {
+		return errors.New("failed to request permission for building block from coordinator")
+	}
+
 	l2Head := d.engine.UnsafeL2Head()
 
 	// Figure out which L1 origin block we're going to be building on top of.
@@ -86,12 +92,6 @@ func (d *Sequencer) StartBuildingBlock(ctx context.Context) error {
 	attrs, err := d.attrBuilder.PreparePayloadAttributes(fetchCtx, l2Head, l1Origin.ID())
 	if err != nil {
 		return err
-	}
-
-	// Request coordinator for the permission to start building a new block.
-	// If we are not allowed to build a block, then we wait for the next block time.
-	if d.coordinatorClient != nil && !d.coordinatorClient.RequestBuildingBlock() {
-		return fmt.Errorf("failed to request permission for building block")
 	}
 
 	// If our next L2 block timestamp is beyond the Sequencer drift threshold, then we must produce
