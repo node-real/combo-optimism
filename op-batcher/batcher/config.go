@@ -27,9 +27,9 @@ type Config struct {
 	RollupNode *sources.RollupClients
 	TxManager  txmgr.TxManager
 
-	NetworkTimeout     time.Duration
-	PollInterval       time.Duration
-	SubUnsafeHeadNumbe uint64
+	NetworkTimeout      time.Duration
+	PollInterval        time.Duration
+	SubUnsafeHeadNumber uint64
 
 	// RollupConfig is queried at startup
 	Rollup *rollup.Config
@@ -94,8 +94,8 @@ type CLIConfig struct {
 	// compression algorithm.
 	ApproxComprRatio float64
 
-	Stopped            bool
-	SubUnsafeHeadNumbe uint64
+	Stopped             bool
+	SubUnsafeHeadNumber uint64
 
 	TxMgrConfig   txmgr.CLIConfig
 	RPCConfig     rpc.CLIConfig
@@ -134,17 +134,17 @@ func NewConfig(ctx *cli.Context) CLIConfig {
 		PollInterval:    ctx.GlobalDuration(flags.PollIntervalFlag.Name),
 
 		/* Optional Flags */
-		MaxChannelDuration: ctx.GlobalUint64(flags.MaxChannelDurationFlag.Name),
-		MaxL1TxSize:        ctx.GlobalUint64(flags.MaxL1TxSizeBytesFlag.Name),
-		TargetL1TxSize:     ctx.GlobalUint64(flags.TargetL1TxSizeBytesFlag.Name),
-		TargetNumFrames:    ctx.GlobalInt(flags.TargetNumFramesFlag.Name),
-		ApproxComprRatio:   ctx.GlobalFloat64(flags.ApproxComprRatioFlag.Name),
-		Stopped:            ctx.GlobalBool(flags.StoppedFlag.Name),
-		SubUnsafeHeadNumbe: ctx.GlobalUint64(flags.SubUnsafeHeadNumberFlag.Name),
-		TxMgrConfig:        txmgr.ReadCLIConfig(ctx),
-		RPCConfig:          rpc.ReadCLIConfig(ctx),
-		LogConfig:          oplog.ReadCLIConfig(ctx),
-		MetricsConfig:      opmetrics.ReadCLIConfig(ctx),
-		PprofConfig:        oppprof.ReadCLIConfig(ctx),
+		MaxChannelDuration:  ctx.GlobalUint64(flags.MaxChannelDurationFlag.Name),
+		MaxL1TxSize:         ctx.GlobalUint64(flags.MaxL1TxSizeBytesFlag.Name),
+		TargetL1TxSize:      ctx.GlobalUint64(flags.TargetL1TxSizeBytesFlag.Name),
+		TargetNumFrames:     ctx.GlobalInt(flags.TargetNumFramesFlag.Name),
+		ApproxComprRatio:    ctx.GlobalFloat64(flags.ApproxComprRatioFlag.Name),
+		Stopped:             ctx.GlobalBool(flags.StoppedFlag.Name),
+		SubUnsafeHeadNumber: ctx.GlobalUint64(flags.SubUnsafeHeadNumberFlag.Name),
+		TxMgrConfig:         txmgr.ReadCLIConfig(ctx),
+		RPCConfig:           rpc.ReadCLIConfig(ctx),
+		LogConfig:           oplog.ReadCLIConfig(ctx),
+		MetricsConfig:       opmetrics.ReadCLIConfig(ctx),
+		PprofConfig:         oppprof.ReadCLIConfig(ctx),
 	}
 }

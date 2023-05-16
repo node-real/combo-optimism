@@ -77,14 +77,14 @@ func NewBatchSubmitterFromCLIConfig(cfg CLIConfig, l log.Logger, m metrics.Metri
 	}
 
 	batcherCfg := Config{
-		L1Client:           l1Client,
-		L2Clients:          l2Clients,
-		RollupNode:         rollupClients,
-		PollInterval:       cfg.PollInterval,
-		NetworkTimeout:     cfg.TxMgrConfig.NetworkTimeout,
-		SubUnsafeHeadNumbe: cfg.SubUnsafeHeadNumbe,
-		TxManager:          txManager,
-		Rollup:             rcfg,
+		L1Client:            l1Client,
+		L2Clients:           l2Clients,
+		RollupNode:          rollupClients,
+		PollInterval:        cfg.PollInterval,
+		NetworkTimeout:      cfg.TxMgrConfig.NetworkTimeout,
+		SubUnsafeHeadNumber: cfg.SubUnsafeHeadNumber,
+		TxManager:           txManager,
+		Rollup:              rcfg,
 		Channel: ChannelConfig{
 			SeqWindowSize:      rcfg.SeqWindowSize,
 			ChannelTimeout:     rcfg.ChannelTimeout,
@@ -198,7 +198,7 @@ func (l *BatchSubmitter) loadBlocksIntoState(ctx context.Context) {
 		return
 	}
 
-	end.Number -= l.SubUnsafeHeadNumbe
+	end.Number -= l.SubUnsafeHeadNumber
 	if start.Number >= end.Number {
 		return
 	}
