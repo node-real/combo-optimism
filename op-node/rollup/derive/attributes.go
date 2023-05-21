@@ -3,7 +3,6 @@ package derive
 import (
 	"context"
 	"fmt"
-	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -12,14 +11,14 @@ import (
 	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
-	opservice "github.com/ethereum-optimism/optimism/op-service"
+
+	"github.com/ethereum-optimism/optimism/op-service/feature"
 )
 
 // L1ReceiptsFetcher fetches L1 header info and receipts for the payload attributes derivation (the info tx and deposits)
 type L1ReceiptsFetcher interface {
 	InfoByHash(ctx context.Context, hash common.Hash) (eth.BlockInfo, error)
 	FetchReceipts(ctx context.Context, blockHash common.Hash) (eth.BlockInfo, types.Receipts, error)
-	InfoAndTxsByHash(ctx context.Context, hash common.Hash) (eth.BlockInfo, types.Transactions, error)
 }
 
 type SystemConfigL2Fetcher interface {
@@ -56,14 +55,6 @@ func (ba *FetchingAttributesBuilder) PreparePayloadAttributes(ctx context.Contex
 		return nil, NewTemporaryError(fmt.Errorf("failed to retrieve L2 parent block: %w", err))
 	}
 
-	var gasPrice *big.Int
-	if opservice.ForBSC {
-		gasPrice, err = ba.prepareAverageGasPrice(ctx, epoch)
-		if err != nil {
-			return nil, NewTemporaryError(fmt.Errorf("failed to prepare average gas price: %w", err))
-		}
-	}
-
 	// If the L1 origin changed this block, then we are in the first block of the epoch. In this
 	// case we need to fetch all transaction receipts from the L1 origin block so we can scan for
 	// user deposits.
@@ -87,9 +78,7 @@ func (ba *FetchingAttributesBuilder) PreparePayloadAttributes(ctx context.Contex
 		if err := UpdateSystemConfigWithL1Receipts(&sysConfig, receipts, ba.cfg); err != nil {
 			return nil, NewCriticalError(fmt.Errorf("failed to apply derived L1 sysCfg updates: %w", err))
 		}
-		if opservice.ForBSC {
-			info = newGasPriceWrapper(info, gasPrice)
-		}
+
 		l1Info = info
 		depositTxs = deposits
 		seqNumber = 0
@@ -101,9 +90,6 @@ func (ba *FetchingAttributesBuilder) PreparePayloadAttributes(ctx context.Contex
 		if err != nil {
 			return nil, NewTemporaryError(fmt.Errorf("failed to fetch L1 block info: %w", err))
 		}
-		if opservice.ForBSC {
-			info = newGasPriceWrapper(info, gasPrice)
-		}
 		l1Info = info
 		depositTxs = nil
 		seqNumber = l2Parent.SequenceNumber + 1
@@ -114,6 +100,14 @@ func (ba *FetchingAttributesBuilder) PreparePayloadAttributes(ctx context.Contex
 	if nextL2Time < l1Info.Time() {
 		return nil, NewResetError(fmt.Errorf("cannot build L2 block on top %s for time %d before L1 origin %s at time %d",
 			l2Parent, nextL2Time, eth.ToBlockID(l1Info), l1Info.Time()))
+	}
+
+	if feature.EnableCustomizeL1BlockBaseFee {
+		_, receipts, err := ba.l1.FetchReceipts(ctx, epoch.Hash)
+		if err != nil {
+			return nil, NewTemporaryError(fmt.Errorf("failed to fetch L1 block receipts: %w", err))
+		}
+		l1Info = feature.CustomizeL1BlockInfoByReceipts(l1Info, receipts)
 	}
 
 	l1InfoTx, err := L1InfoDepositBytes(seqNumber, l1Info, sysConfig, ba.cfg.IsRegolith(nextL2Time))
@@ -133,44 +127,4 @@ func (ba *FetchingAttributesBuilder) PreparePayloadAttributes(ctx context.Contex
 		NoTxPool:              true,
 		GasLimit:              (*eth.Uint64Quantity)(&sysConfig.GasLimit),
 	}, nil
-}
-
-var bscDefaultGasPrice = big.NewInt(5000000000)
-
-func (ba *FetchingAttributesBuilder) prepareAverageGasPrice(ctx context.Context, epoch eth.BlockID) (*big.Int, error) {
-	_, txs, err := ba.l1.InfoAndTxsByHash(ctx, epoch.Hash)
-	if err != nil {
-		return nil, err
-	}
-	count := 0
-	var sum big.Int
-	for _, tx := range txs {
-		if tx.GasPrice().Cmp(common.Big0) <= 0 {
-			continue
-		}
-		sum.Add(&sum, tx.GasPrice())
-		count += 1
-	}
-	if count == 0 {
-		return bscDefaultGasPrice, nil
-	}
-	return sum.Div(&sum, big.NewInt(int64(count))), nil
-}
-
-type gasPriceWrapper struct {
-	eth.BlockInfo
-	gasprice *big.Int
-}
-
-var _ (eth.BlockInfo) = (*gasPriceWrapper)(nil)
-
-func newGasPriceWrapper(info eth.BlockInfo, gasprice *big.Int) *gasPriceWrapper {
-	return &gasPriceWrapper{
-		BlockInfo: info,
-		gasprice:  gasprice,
-	}
-}
-
-func (w *gasPriceWrapper) BaseFee() *big.Int {
-	return w.gasprice
 }

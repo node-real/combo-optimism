@@ -6,6 +6,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+
+	"github.com/ethereum-optimism/optimism/op-service/feature"
 )
 
 // TransactionArgs represents the arguments to construct a new transaction
@@ -64,29 +66,20 @@ func (args *TransactionArgs) data() []byte {
 
 // ToTransaction converts the arguments to a transaction.
 func (args *TransactionArgs) ToTransaction() *types.Transaction {
-	var data types.TxData
-	// al := types.AccessList{}
-	// if args.AccessList != nil {
-	// 	al = *args.AccessList
-	// }
-	// data = &types.DynamicFeeTx{
-	// 	To:         args.To,
-	// 	ChainID:    (*big.Int)(args.ChainID),
-	// 	Nonce:      uint64(*args.Nonce),
-	// 	Gas:        uint64(*args.Gas),
-	// 	GasFeeCap:  (*big.Int)(args.MaxFeePerGas),
-	// 	GasTipCap:  (*big.Int)(args.MaxPriorityFeePerGas),
-	// 	Value:      (*big.Int)(args.Value),
-	// 	Data:       args.data(),
-	// 	AccessList: al,
-	// }
-	data = &types.LegacyTx{
-		To:       args.To,
-		Nonce:    uint64(*args.Nonce),
-		Gas:      uint64(*args.Gas),
-		GasPrice: args.GasPrice.ToInt(),
-		Value:    (*big.Int)(args.Value),
-		Data:     args.data(),
+	al := types.AccessList{}
+	if args.AccessList != nil {
+		al = *args.AccessList
 	}
-	return types.NewTx(data)
+	data := &types.DynamicFeeTx{
+		To:         args.To,
+		ChainID:    (*big.Int)(args.ChainID),
+		Nonce:      uint64(*args.Nonce),
+		Gas:        uint64(*args.Gas),
+		GasFeeCap:  (*big.Int)(args.MaxFeePerGas),
+		GasTipCap:  (*big.Int)(args.MaxPriorityFeePerGas),
+		Value:      (*big.Int)(args.Value),
+		Data:       args.data(),
+		AccessList: al,
+	}
+	return types.NewTx(feature.CustomizeCraftL1Transaction(data))
 }

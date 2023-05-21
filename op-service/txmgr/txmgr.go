@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
-	opservice "github.com/ethereum-optimism/optimism/op-service"
+	"github.com/ethereum-optimism/optimism/op-service/feature"
 	"github.com/ethereum-optimism/optimism/op-service/txmgr/metrics"
 )
 
@@ -164,68 +164,38 @@ func (m *SimpleTxManager) craftTx(ctx context.Context, candidate TxCandidate) (*
 	}
 	m.metr.RecordNonce(nonce)
 
-	var tx *types.Transaction
-	if opservice.ForBSC {
-		rawTx := &types.LegacyTx{
-			Nonce:    nonce,
-			To:       candidate.To,
-			GasPrice: gasFeeCap,
-			Data:     candidate.TxData,
-		}
-		m.l.Info("creating tx", "to", rawTx.To, "from", m.cfg.From)
+	rawTx := &types.DynamicFeeTx{
+		ChainID:   m.chainID,
+		Nonce:     nonce,
+		To:        candidate.To,
+		GasTipCap: gasTipCap,
+		GasFeeCap: gasFeeCap,
+		Data:      candidate.TxData,
+	}
 
-		// If the gas limit is set, we can use that as the gas
-		if candidate.GasLimit != 0 {
-			rawTx.Gas = candidate.GasLimit
-		} else {
-			// Calculate the intrinsic gas for the transaction
-			gas, err := m.backend.EstimateGas(ctx, ethereum.CallMsg{
-				From:     m.cfg.From,
-				To:       candidate.To,
-				GasPrice: gasFeeCap,
-				Data:     rawTx.Data,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to estimate gas: %w", err)
-			}
-			rawTx.Gas = gas
-		}
-		tx = types.NewTx(rawTx)
+	m.l.Info("creating tx", "to", rawTx.To, "from", m.cfg.From)
+
+	// If the gas limit is set, we can use that as the gas
+	if candidate.GasLimit != 0 {
+		rawTx.Gas = candidate.GasLimit
 	} else {
-		rawTx := &types.DynamicFeeTx{
-			ChainID:   m.chainID,
-			Nonce:     nonce,
+		// Calculate the intrinsic gas for the transaction
+		gas, err := m.backend.EstimateGas(ctx, feature.CustomizeCraftL1CallMsg(ethereum.CallMsg{
+			From:      m.cfg.From,
 			To:        candidate.To,
-			GasTipCap: gasTipCap,
 			GasFeeCap: gasFeeCap,
-			Data:      candidate.TxData,
+			GasTipCap: gasTipCap,
+			Data:      rawTx.Data,
+		}))
+		if err != nil {
+			return nil, fmt.Errorf("failed to estimate gas: %w", err)
 		}
-
-		m.l.Info("creating tx", "to", rawTx.To, "from", m.cfg.From)
-
-		// If the gas limit is set, we can use that as the gas
-		if candidate.GasLimit != 0 {
-			rawTx.Gas = candidate.GasLimit
-		} else {
-			// Calculate the intrinsic gas for the transaction
-			gas, err := m.backend.EstimateGas(ctx, ethereum.CallMsg{
-				From:      m.cfg.From,
-				To:        candidate.To,
-				GasFeeCap: gasFeeCap,
-				GasTipCap: gasTipCap,
-				Data:      rawTx.Data,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to estimate gas: %w", err)
-			}
-			rawTx.Gas = gas
-		}
-		tx = types.NewTx(rawTx)
+		rawTx.Gas = gas
 	}
 
 	ctx, cancel = context.WithTimeout(ctx, m.cfg.NetworkTimeout)
 	defer cancel()
-	return m.cfg.Signer(ctx, m.cfg.From, tx)
+	return m.cfg.Signer(ctx, m.cfg.From, types.NewTx(feature.CustomizeCraftL1Transaction(rawTx)))
 }
 
 // send submits the same transaction several times with increasing gas prices as necessary.
@@ -423,34 +393,20 @@ func (m *SimpleTxManager) increaseGasPrice(ctx context.Context, tx *types.Transa
 		return tx
 	}
 
-	var rtx *types.Transaction
-	if opservice.ForBSC {
-		rawTx := &types.LegacyTx{
-			Nonce:    tx.Nonce(),
-			Gas:      tx.Gas(),
-			GasPrice: gasFeeCap,
-			To:       tx.To(),
-			Value:    tx.Value(),
-			Data:     tx.Data(),
-		}
-		rtx = types.NewTx(rawTx)
-	} else {
-		rawTx := &types.DynamicFeeTx{
-			ChainID:    tx.ChainId(),
-			Nonce:      tx.Nonce(),
-			GasTipCap:  gasTipCap,
-			GasFeeCap:  gasFeeCap,
-			Gas:        tx.Gas(),
-			To:         tx.To(),
-			Value:      tx.Value(),
-			Data:       tx.Data(),
-			AccessList: tx.AccessList(),
-		}
-		rtx = types.NewTx(rawTx)
-	}
+	rawTx := feature.CustomizeCraftL1Transaction(&types.DynamicFeeTx{
+		ChainID:    tx.ChainId(),
+		Nonce:      tx.Nonce(),
+		GasTipCap:  gasTipCap,
+		GasFeeCap:  gasFeeCap,
+		Gas:        tx.Gas(),
+		To:         tx.To(),
+		Value:      tx.Value(),
+		Data:       tx.Data(),
+		AccessList: tx.AccessList(),
+	})
 	ctx, cancel := context.WithTimeout(ctx, m.cfg.NetworkTimeout)
 	defer cancel()
-	newTx, err := m.cfg.Signer(ctx, m.cfg.From, rtx)
+	newTx, err := m.cfg.Signer(ctx, m.cfg.From, types.NewTx(rawTx))
 	if err != nil {
 		m.l.Warn("failed to sign new transaction", "err", err)
 		return tx
@@ -475,13 +431,10 @@ func (m *SimpleTxManager) suggestGasPriceCaps(ctx context.Context) (*big.Int, *b
 	if err != nil {
 		m.metr.RPCError()
 		return nil, nil, fmt.Errorf("failed to fetch the suggested basefee: %w", err)
-	} else if head.BaseFee == nil {
-		if opservice.ForBSC {
-			return tip, big.NewInt(0), nil
-		}
+	} else if feature.CustomizeSuggestedL1BaseFee(head.BaseFee) == nil {
 		return nil, nil, errors.New("txmgr does not support pre-london blocks that do not have a basefee")
 	}
-	return tip, head.BaseFee, nil
+	return tip, feature.CustomizeSuggestedL1BaseFee(head.BaseFee), nil
 }
 
 // calcThresholdValue returns x * priceBumpPercent / 100
