@@ -6,6 +6,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+
+	"github.com/ethereum-optimism/optimism/op-service/feature"
 )
 
 // TransactionArgs represents the arguments to construct a new transaction
@@ -64,12 +66,11 @@ func (args *TransactionArgs) data() []byte {
 
 // ToTransaction converts the arguments to a transaction.
 func (args *TransactionArgs) ToTransaction() *types.Transaction {
-	var data types.TxData
 	al := types.AccessList{}
 	if args.AccessList != nil {
 		al = *args.AccessList
 	}
-	data = &types.DynamicFeeTx{
+	data := &types.DynamicFeeTx{
 		To:         args.To,
 		ChainID:    (*big.Int)(args.ChainID),
 		Nonce:      uint64(*args.Nonce),
@@ -80,5 +81,5 @@ func (args *TransactionArgs) ToTransaction() *types.Transaction {
 		Data:       args.data(),
 		AccessList: al,
 	}
-	return types.NewTx(data)
+	return types.NewTx(feature.CustomizeCraftL1Transaction(data))
 }
