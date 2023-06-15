@@ -164,14 +164,6 @@ contract OptimismPortal is Initializable, ResourceMetering, Semver {
     }
 
     /**
-    * @notice Reverts when paused.
-     */
-    modifier notBlackAccount() {
-        require(!isBlackAccount(msg.sender), "OptimismPortal: black account");
-        _;
-    }
-
-    /**
      * @custom:semver 1.6.0
      *
      * @param _l2Oracle                  Address of the L2OutputOracle contract.
@@ -276,7 +268,8 @@ contract OptimismPortal is Initializable, ResourceMetering, Semver {
         uint256 _l2OutputIndex,
         Types.OutputRootProof calldata _outputRootProof,
         bytes[] calldata _withdrawalProof
-    ) external whenNotPaused notBlackAccount {
+    ) external whenNotPaused {
+        require(!isBlackAccount(_tx.sender), "OptimismPortal: black account");
         // Prevent users from creating a deposit transaction where this address is the message
         // sender on L2. Because this is checked here, we do not need to check again in
         // `finalizeWithdrawalTransaction`.
@@ -356,8 +349,9 @@ contract OptimismPortal is Initializable, ResourceMetering, Semver {
      */
     function finalizeWithdrawalTransaction(Types.WithdrawalTransaction memory _tx)
         external
-        whenNotPaused notBlackAccount
+        whenNotPaused
     {
+        require(!isBlackAccount(_tx.sender), "OptimismPortal: black account");
         // Make sure that the l2Sender has not yet been set. The l2Sender is set to a value other
         // than the default value when a withdrawal transaction is being finalized. This check is
         // a defacto reentrancy guard.
