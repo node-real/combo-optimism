@@ -43,6 +43,8 @@ type L2TransactionWithdrawal struct {
 	FinalizedL1EventGUID *uuid.UUID
 	Succeeded            *bool
 
+	IsAutoWithdrawal *bool
+
 	Tx       Transaction `gorm:"embedded"`
 	GasLimit *big.Int    `gorm:"serializer:u256"`
 }
@@ -53,6 +55,9 @@ type BridgeTransactionsView interface {
 
 	L2TransactionWithdrawal(common.Hash) (*L2TransactionWithdrawal, error)
 	L2LatestBlockHeader() (*L2BlockHeader, error)
+	L2TransactionWithdrawalsNullIsAutoWithdrawal() ([]L2TransactionWithdrawal, error)
+	L2UnprovenAutoWithdrawals() ([]L2TransactionWithdrawal, error)
+	L2UnfinalizedAutoWithdrawals() ([]L2TransactionWithdrawal, error)
 }
 
 type BridgeTransactionsDB interface {
@@ -61,6 +66,7 @@ type BridgeTransactionsDB interface {
 	StoreL1TransactionDeposits([]L1TransactionDeposit) error
 
 	StoreL2TransactionWithdrawals([]L2TransactionWithdrawal) error
+	UpdateL2TransactionWithdrawals(withdrawals []L2TransactionWithdrawal) error
 	MarkL2TransactionWithdrawalProvenEvent(common.Hash, uuid.UUID) error
 	MarkL2TransactionWithdrawalFinalizedEvent(common.Hash, uuid.UUID, bool) error
 }
@@ -140,6 +146,16 @@ func (db *bridgeTransactionsDB) L1LatestBlockHeader() (*L1BlockHeader, error) {
  * Transactions withdrawn from L2
  */
 
+func (db *bridgeTransactionsDB) UpdateL2TransactionWithdrawals(withdrawals []L2TransactionWithdrawal) error {
+	deduped := db.gorm.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "withdrawal_hash"}}, DoNothing: false, UpdateAll: true})
+	result := deduped.Create(&withdrawals)
+	if result.Error == nil && int(result.RowsAffected) < len(withdrawals) {
+		db.log.Warn("ignored L2 tx withdrawal duplicates", "duplicates", len(withdrawals)-int(result.RowsAffected))
+	}
+
+	return result.Error
+}
+
 func (db *bridgeTransactionsDB) StoreL2TransactionWithdrawals(withdrawals []L2TransactionWithdrawal) error {
 	deduped := db.gorm.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "withdrawal_hash"}}, DoNothing: true})
 	result := deduped.Create(&withdrawals)
@@ -161,6 +177,64 @@ func (db *bridgeTransactionsDB) L2TransactionWithdrawal(withdrawalHash common.Ha
 	}
 
 	return &withdrawal, nil
+}
+
+func (db *bridgeTransactionsDB) L2TransactionWithdrawalsNullIsAutoWithdrawal() ([]L2TransactionWithdrawal, error) {
+	query := db.gorm.Table("l2_transaction_withdrawals").Where(
+		"l2_transaction_withdrawals.is_auto_withdrawal IS NULL",
+	).Order("l2_transaction_withdrawals.initiated_l2_event_guid ASC").Select("l2_transaction_withdrawals.*")
+
+	var withdrawals []L2TransactionWithdrawal
+	result := query.Find(&withdrawals)
+
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, result.Error
+	}
+
+	return withdrawals, nil
+}
+
+func (db *bridgeTransactionsDB) L2UnprovenAutoWithdrawals() ([]L2TransactionWithdrawal, error) {
+	query := db.gorm.Table("l2_transaction_withdrawals").Select(
+		"l2_transaction_withdrawals.*",
+	).Where(
+		"l2_transaction_withdrawals.is_auto_withdrawal = true AND l2_transaction_withdrawals.proven_l1_event_guid IS NULL",
+	).Order("l2_transaction_withdrawals.timestamp ASC")
+
+	var withdrawals []L2TransactionWithdrawal
+	result := query.Find(&withdrawals)
+
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, result.Error
+	}
+
+	return withdrawals, nil
+}
+
+func (db *bridgeTransactionsDB) L2UnfinalizedAutoWithdrawals() ([]L2TransactionWithdrawal, error) {
+	query := db.gorm.Table("l2_transaction_withdrawals").Select(
+		"l2_transaction_withdrawals.*",
+	).Where(
+		"l2_transaction_withdrawals.is_auto_withdrawal = true AND l2_transaction_withdrawals.proven_l1_event_guid IS NOT NULL AND l2_transaction_withdrawals.finalized_l1_event_guid IS NULL",
+	).Order("l2_transaction_withdrawals.timestamp ASC")
+
+	var withdrawals []L2TransactionWithdrawal
+	result := query.Find(&withdrawals)
+
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, result.Error
+	}
+
+	return withdrawals, nil
 }
 
 // MarkL2TransactionWithdrawalProvenEvent links a withdrawn transaction with associated Prove action on L1.
