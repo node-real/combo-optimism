@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/ethereum-optimism/optimism/op-service/client"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/retry"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -40,6 +42,14 @@ type EthClient interface {
 
 	StorageHash(common.Address, *big.Int) (common.Hash, error)
 	FilterLogs(ethereum.FilterQuery) ([]types.Log, error)
+
+	GetTransactionReceipt(txHash common.Hash) (*types.Receipt, error)
+	GetProof(address common.Address, storageKeys []string, blockNumber *big.Int) (*eth.AccountResult, error)
+
+	ChainId() (*big.Int, error)
+
+	bind.ContractCaller
+	bind.ContractTransactor
 }
 
 type clnt struct {
@@ -212,6 +222,143 @@ func (c *clnt) FilterLogs(query ethereum.FilterQuery) ([]types.Log, error) {
 	return result, err
 }
 
+func (c *clnt) GetTransactionReceipt(txHash common.Hash) (*types.Receipt, error) {
+	ctxwt, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout)
+	defer cancel()
+
+	var result *types.Receipt
+	err := c.rpc.CallContext(ctxwt, &result, "eth_getTransactionReceipt", txHash)
+	return result, err
+}
+
+func (c *clnt) CodeAt(ctx context.Context, contract common.Address, blockNumber *big.Int) ([]byte, error) {
+	var result string
+	err := c.rpc.CallContext(ctx, &result, "eth_getCode", contract, toBlockNumArg(blockNumber))
+	if err != nil {
+		return nil, err
+	}
+
+	return hexutil.Decode(result)
+}
+
+func (c *clnt) CallContract(ctx context.Context, call ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
+	var result string
+	err := c.rpc.CallContext(ctx, &result, "eth_call", toCallArg(call), toBlockNumArg(blockNumber))
+	if err != nil {
+		return nil, err
+	}
+
+	return hexutil.Decode(result)
+}
+
+func (c *clnt) GetProof(address common.Address, storageKeys []string, blockNumber *big.Int) (*eth.AccountResult, error) {
+	ctxwt, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout)
+	defer cancel()
+
+	var result eth.AccountResult
+	err := c.rpc.CallContext(ctxwt, &result, "eth_getProof", address, storageKeys, toBlockNumArg(blockNumber))
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (c *clnt) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
+	var header *types.Header
+	err := c.rpc.CallContext(ctx, &header, "eth_getBlockByNumber", toBlockNumArg(number), false)
+	if err != nil {
+		return nil, err
+	} else if header == nil {
+		return nil, ethereum.NotFound
+	}
+
+	return header, nil
+}
+
+func (c *clnt) PendingCodeAt(ctx context.Context, account common.Address) ([]byte, error) {
+	var result string
+	err := c.rpc.CallContext(ctx, &result, "eth_getCode", account, "pending")
+	if err != nil {
+		return nil, err
+	}
+
+	return hexutil.Decode(result)
+}
+
+func (c *clnt) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {
+	var result string
+	err := c.rpc.CallContext(ctx, &result, "eth_getTransactionCount", account, "pending")
+	if err != nil {
+		return 0, err
+	}
+
+	return hexutil.DecodeUint64(result)
+}
+
+func (c *clnt) SuggestGasPrice(ctx context.Context) (*big.Int, error) {
+	var result string
+	err := c.rpc.CallContext(ctx, &result, "eth_gasPrice")
+	if err != nil {
+		return nil, err
+	}
+
+	return hexutil.DecodeBig(result)
+}
+
+func (c *clnt) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	var result string
+	err := c.rpc.CallContext(ctx, &result, "eth_feeHistory")
+	if err != nil {
+		return nil, err
+	}
+
+	return hexutil.DecodeBig(result)
+}
+
+func (c *clnt) EstimateGas(ctx context.Context, call ethereum.CallMsg) (gas uint64, err error) {
+	var result string
+	err = c.rpc.CallContext(ctx, &result, "eth_estimateGas", toCallArg(call))
+	if err != nil {
+		return 0, err
+	}
+
+	return hexutil.DecodeUint64(result)
+}
+
+func (c *clnt) SendTransaction(ctx context.Context, tx *types.Transaction) error {
+	data, err := tx.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	var result string
+	err = c.rpc.CallContext(ctx, &result, "eth_sendRawTransaction", hexutil.Encode(data))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *clnt) ChainId() (*big.Int, error) {
+	ctxwt, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout)
+	defer cancel()
+
+	var result string
+	err := c.rpc.CallContext(ctxwt, &result, "eth_ChainId")
+	if err != nil {
+		return nil, err
+	}
+
+	chainId, err := hexutil.DecodeUint64(result)
+	if err != nil {
+		return nil, err
+	}
+
+	return big.NewInt(int64(chainId)), err
+}
+
 // Modeled off op-service/client.go. We can refactor this once the client/metrics portion
 // of op-service/client has been generalized
 
@@ -259,6 +406,26 @@ func toBlockNumArg(number *big.Int) string {
 	}
 	// It's negative.
 	return rpc.BlockNumber(number.Int64()).String()
+}
+
+func toCallArg(msg ethereum.CallMsg) interface{} {
+	arg := map[string]interface{}{
+		"from": msg.From,
+		"to":   msg.To,
+	}
+	if len(msg.Data) > 0 {
+		arg["input"] = hexutil.Bytes(msg.Data)
+	}
+	if msg.Value != nil {
+		arg["value"] = (*hexutil.Big)(msg.Value)
+	}
+	if msg.Gas != 0 {
+		arg["gas"] = hexutil.Uint64(msg.Gas)
+	}
+	if msg.GasPrice != nil {
+		arg["gasPrice"] = (*hexutil.Big)(msg.GasPrice)
+	}
+	return arg
 }
 
 func toFilterArg(q ethereum.FilterQuery) (interface{}, error) {
