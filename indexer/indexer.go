@@ -85,7 +85,7 @@ func NewIndexer(
 	}
 
 	// Bridge
-	bridgeProcessor, err := processors.NewBridgeProcessor(log, db, bridge.NewMetrics(metricsRegistry), l1Etl, l2EthClient, chainConfig)
+	bridgeProcessor, err := processors.NewBridgeProcessor(log, db, bridge.NewMetrics(metricsRegistry), l1Etl, chainConfig)
 	if err != nil {
 		return nil, err
 	}
