@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS l2_transaction_withdrawals (
     proven_l1_event_guid    VARCHAR UNIQUE REFERENCES l1_contract_events(guid) ON DELETE CASCADE,
     finalized_l1_event_guid VARCHAR UNIQUE REFERENCES l1_contract_events(guid) ON DELETE CASCADE,
     succeeded               BOOLEAN,
+    is_auto_withdrawal      BOOLEAN,
 
     -- transaction data
     from_address VARCHAR NOT NULL,
