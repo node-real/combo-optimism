@@ -36,9 +36,10 @@ type Indexer struct {
 	metricsConfig   config.ServerConfig
 	metricsRegistry *prometheus.Registry
 
-	L1ETL           *etl.L1ETL
-	L2ETL           *etl.L2ETL
-	BridgeProcessor *processors.BridgeProcessor
+	L1ETL                       *etl.L1ETL
+	L2ETL                       *etl.L2ETL
+	BridgeProcessor             *processors.BridgeProcessor
+	autoWithdrawBridgeProcessor *processors.AutoWithdrawBridgeProcessor
 }
 
 // NewIndexer initializes an instance of the Indexer
@@ -84,7 +85,13 @@ func NewIndexer(
 	}
 
 	// Bridge
-	bridgeProcessor, err := processors.NewBridgeProcessor(log, db, bridge.NewMetrics(metricsRegistry), l1Etl, chainConfig)
+	bridgeProcessor, err := processors.NewBridgeProcessor(log, db, bridge.NewMetrics(metricsRegistry), l1Etl, l2EthClient, chainConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	// AutoWithdrawBridge
+	autoWithdrawBridgeProcessor, err := processors.NewAutoWithdrawBridgeProcessor(log, db, l1Etl, l1EthClient, l2EthClient, chainConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -97,9 +104,10 @@ func NewIndexer(
 		metricsConfig:   metricsConfig,
 		metricsRegistry: metricsRegistry,
 
-		L1ETL:           l1Etl,
-		L2ETL:           l2Etl,
-		BridgeProcessor: bridgeProcessor,
+		L1ETL:                       l1Etl,
+		L2ETL:                       l2Etl,
+		BridgeProcessor:             bridgeProcessor,
+		autoWithdrawBridgeProcessor: autoWithdrawBridgeProcessor,
 	}
 
 	return indexer, nil
@@ -163,6 +171,7 @@ func (i *Indexer) Run(ctx context.Context) error {
 	runProcess(i.L1ETL.Start)
 	runProcess(i.L2ETL.Start)
 	runProcess(i.BridgeProcessor.Start)
+	runProcess(i.autoWithdrawBridgeProcessor.Start)
 	runProcess(i.startMetricsServer)
 	runProcess(i.startHttpServer)
 	wg.Wait()
