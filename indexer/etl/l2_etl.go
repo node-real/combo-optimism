@@ -3,6 +3,9 @@ package etl
 import (
 	"context"
 	"errors"
+	"math/big"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/ethereum-optimism/optimism/indexer/config"
@@ -51,7 +54,17 @@ func NewL2ETL(cfg Config, log log.Logger, db *database.DB, metrics Metricer, cli
 		log.Info("detected last indexed block", "number", latestHeader.Number, "hash", latestHeader.Hash)
 		fromHeader = latestHeader.RLPHeader.Header()
 	} else {
-		log.Info("no indexed state, starting from genesis")
+		// hack, retrieve genesis block number from environment variable, only for manually test
+		if envL2GenesisNumber := os.Getenv("TEST_L2_GENESIS_NUMBER"); envL2GenesisNumber != "" {
+			envL2GenesisNumberI64, err := strconv.ParseInt(envL2GenesisNumber, 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			fromHeader, err = client.BlockHeaderByNumber(big.NewInt(envL2GenesisNumberI64))
+			log.Info("no indexed state, starting from env[TEST_L2_GENESIS_NUMBER] = %s", envL2GenesisNumber)
+		} else {
+			log.Info("no indexed state, starting from genesis")
+		}
 	}
 
 	etlBatches := make(chan ETLBatch)
