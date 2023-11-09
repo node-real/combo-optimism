@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -183,6 +184,29 @@ var Presets = map[int]Preset{
 				L1ERC721BridgeProxy:         common.HexToAddress("0xBA8397B6f255618D5985d0fB427D8c0496F3a5FA"),
 			},
 			L1StartingHeight: 17672702,
+		},
+	},
+	5611: {
+		Name: "opBNB testnet",
+		ChainConfig: ChainConfig{
+			Preset: 5611,
+			L1Contracts: L1Contracts{
+				AddressManager:              common.HexToAddress("0x1111111111111111111111111111111111111111"),
+				SystemConfigProxy:           common.HexToAddress("0x406aC857817708eAf4ca3A82317eF4ae3D1EA23B"),
+				OptimismPortalProxy:         common.HexToAddress("0x4386C8ABf2009aC0c263462Da568DD9d46e52a31"),
+				L2OutputOracleProxy:         common.HexToAddress("0xFf2394Bb843012562f4349C6632a0EcB92fC8810"),
+				L1CrossDomainMessengerProxy: common.HexToAddress("0xD506952e78eeCd5d4424B1990a0c99B1568E7c2C"),
+				L1StandardBridgeProxy:       common.HexToAddress("0x677311Fd2cCc511Bbc0f581E8d9a07B033D5E840"),
+				L1ERC721BridgeProxy:         common.HexToAddress("0x17e1454015bFb3377c75bE7b6d47B236fd2ddbE7"),
+			},
+			L1StartingHeight: 30727847,
+			L2Contracts: L2Contracts{
+				L2ToL1MessagePasser:    predeploys.L2ToL1MessagePasserAddr,
+				L2CrossDomainMessenger: predeploys.L2CrossDomainMessengerAddr,
+				L2StandardBridge:       predeploys.L2StandardBridgeAddr,
+				L2ERC721Bridge:         predeploys.L2ERC721BridgeAddr,
+				L2AutoWithdrawBridge:   common.HexToAddress("0x8ef3b69b4bcac40cbdc19ec607c20a6e1838f9a5"),
+			},
 		},
 	},
 }

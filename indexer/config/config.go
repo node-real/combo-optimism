@@ -69,6 +69,7 @@ type L2Contracts struct {
 	L2CrossDomainMessenger common.Address
 	L2StandardBridge       common.Address
 	L2ERC721Bridge         common.Address
+	L2AutoWithdrawBridge   common.Address
 }
 
 func L2ContractsFromPredeploys() L2Contracts {
@@ -177,7 +178,13 @@ func LoadConfig(log log.Logger, path string) (Config, error) {
 	}
 
 	// Setup L2Contracts from predeploys
-	cfg.Chain.L2Contracts = L2ContractsFromPredeploys()
+	if cfg.Chain.L2Contracts.L2ToL1MessagePasser == common.HexToAddress("0x") &&
+		cfg.Chain.L2Contracts.L2CrossDomainMessenger == common.HexToAddress("0x") &&
+		cfg.Chain.L2Contracts.L2StandardBridge == common.HexToAddress("0x") &&
+		cfg.Chain.L2Contracts.L2ERC721Bridge == common.HexToAddress("0x") &&
+		cfg.Chain.L2Contracts.L2AutoWithdrawBridge == common.HexToAddress("0x") {
+		cfg.Chain.L2Contracts = L2ContractsFromPredeploys()
+	}
 
 	// Deserialize the config file again when a preset is configured such that
 	// precedence is given to the config file vs the preset
