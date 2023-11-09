@@ -223,6 +223,12 @@ func (b *BridgeProcessor) run() error {
 			return err
 		}
 
+		// Now all auto-withdraw-to events can be determined
+		if err := bridge.L2ProcessAutoWithdrawEvents(tx, b.chainConfig.L2Contracts); err != nil {
+			batchLog.Error("failed to index l2 auto-withdraw events", "err", err)
+			return err
+		}
+
 		// a-ok
 		return nil
 	}); err != nil {
