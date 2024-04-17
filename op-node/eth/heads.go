@@ -8,8 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
 
-	"github.com/ethereum-optimism/optimism/logutil/log"
-
+	"github.com/ethereum-optimism/optimism/op-node/logutil/log"
 	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 

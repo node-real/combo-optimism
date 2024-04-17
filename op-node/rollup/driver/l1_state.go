@@ -1,9 +1,8 @@
 package driver
 
 import (
-	"github.com/ethereum-optimism/optimism/logutil/log"
-
 	"github.com/ethereum-optimism/optimism/op-node/eth"
+	"github.com/ethereum-optimism/optimism/op-node/logutil/log"
 )
 
 type L1Metrics interface {

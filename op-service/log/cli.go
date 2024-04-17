@@ -8,8 +8,7 @@ import (
 	"github.com/urfave/cli"
 	"golang.org/x/term"
 
-	"github.com/ethereum-optimism/optimism/logutil/log"
-
+	log2 "github.com/ethereum-optimism/optimism/op-node/logutil/log"
 	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 
@@ -55,21 +54,21 @@ func (cfg CLIConfig) Check() error {
 	}
 
 	level := strings.ToLower(cfg.Level)
-	_, err := log.LvlFromString(level)
+	_, err := log2.LvlFromString(level)
 	if err != nil {
 		return fmt.Errorf("unrecognized log level: %w", err)
 	}
 	return nil
 }
 
-func NewLogger(cfg CLIConfig) log.Logger {
-	handler := log.StreamHandler(os.Stdout, Format(cfg.Format, cfg.Color))
-	handler = log.SyncHandler(handler)
-	handler = log.LvlFilterHandler(Level(cfg.Level), handler)
+func NewLogger(cfg CLIConfig) log2.Logger {
+	handler := log2.StreamHandler(os.Stdout, Format(cfg.Format, cfg.Color))
+	handler = log2.SyncHandler(handler)
+	handler = log2.LvlFilterHandler(Level(cfg.Level), handler)
 	// Set the root handle to what we have configured. Some components like go-ethereum's RPC
 	// server use log.Root() instead of being able to pass in a log.
-	log.Root().SetHandler(handler)
-	logger := log.New()
+	log2.Root().SetHandler(handler)
+	logger := log2.New()
 	logger.SetHandler(handler)
 	return logger
 }
@@ -103,31 +102,31 @@ func ReadCLIConfig(ctx *cli.Context) CLIConfig {
 }
 
 // Format turns a string and color into a structured Format object
-func Format(lf string, color bool) log.Format {
+func Format(lf string, color bool) log2.Format {
 	switch lf {
 	case "json":
-		return log.JSONFormat()
+		return log2.JSONFormat()
 	case "json-pretty":
-		return log.JSONFormatEx(true, true)
+		return log2.JSONFormatEx(true, true)
 	case "text":
 		if term.IsTerminal(int(os.Stdout.Fd())) {
-			return log.TerminalFormat(color)
+			return log2.TerminalFormat(color)
 		} else {
-			return log.LogfmtFormat()
+			return log2.LogfmtFormat()
 		}
 	case "terminal":
-		return log.TerminalFormat(color)
+		return log2.TerminalFormat(color)
 	case "logfmt":
-		return log.LogfmtFormat()
+		return log2.LogfmtFormat()
 	default:
 		panic("Failed to create `log.Format` from options")
 	}
 }
 
 // Level parses the level string into an appropriate object
-func Level(s string) log.Lvl {
+func Level(s string) log2.Lvl {
 	s = strings.ToLower(s) // ignore case
-	l, err := log.LvlFromString(s)
+	l, err := log2.LvlFromString(s)
 	if err != nil {
 		panic(fmt.Sprintf("Could not parse log level: %v", err))
 	}

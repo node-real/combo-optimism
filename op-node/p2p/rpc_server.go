@@ -21,8 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 
-	"github.com/ethereum-optimism/optimism/logutil/log"
-
+	"github.com/ethereum-optimism/optimism/op-node/logutil/log"
 	"github.com/ethereum-optimism/optimism/op-node/metrics"
 )
 

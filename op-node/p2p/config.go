@@ -20,8 +20,7 @@ import (
 	"github.com/libp2p/go-libp2p/p2p/net/conngater"
 	cmgr "github.com/libp2p/go-libp2p/p2p/net/connmgr"
 
-	userlog "github.com/ethereum-optimism/optimism/logutil/log"
-
+	userlog "github.com/ethereum-optimism/optimism/op-node/logutil/log"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 )
 

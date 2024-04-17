@@ -4,7 +4,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	peer "github.com/libp2p/go-libp2p/core/peer"
 
-	log "github.com/ethereum-optimism/optimism/logutil/log"
+	"github.com/ethereum-optimism/optimism/op-node/logutil/log"
 )
 
 type scorer struct {

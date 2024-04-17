@@ -23,11 +23,10 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/ethereum-optimism/optimism/logutil/log"
-
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 
+	"github.com/ethereum-optimism/optimism/op-node/logutil/log"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 )
 

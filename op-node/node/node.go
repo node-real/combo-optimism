@@ -12,10 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/event"
 
-	"github.com/ethereum-optimism/optimism/logutil/log"
-
 	"github.com/ethereum-optimism/optimism/op-node/client"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
+	log2 "github.com/ethereum-optimism/optimism/op-node/logutil/log"
 	"github.com/ethereum-optimism/optimism/op-node/metrics"
 	"github.com/ethereum-optimism/optimism/op-node/p2p"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/driver"
@@ -23,7 +22,7 @@ import (
 )
 
 type OpNode struct {
-	log        log.Logger
+	log        log2.Logger
 	appVersion string
 	metrics    *metrics.Metrics
 
@@ -49,7 +48,7 @@ type OpNode struct {
 // The OpNode handles incoming gossip
 var _ p2p.GossipIn = (*OpNode)(nil)
 
-func New(ctx context.Context, cfg *Config, log log.Logger, snapshotLog log.Logger, appVersion string, m *metrics.Metrics) (*OpNode, error) {
+func New(ctx context.Context, cfg *Config, log log2.Logger, snapshotLog log2.Logger, appVersion string, m *metrics.Metrics) (*OpNode, error) {
 	if err := cfg.Check(); err != nil {
 		return nil, err
 	}
@@ -74,7 +73,7 @@ func New(ctx context.Context, cfg *Config, log log.Logger, snapshotLog log.Logge
 	return n, nil
 }
 
-func (n *OpNode) init(ctx context.Context, cfg *Config, snapshotLog log.Logger) error {
+func (n *OpNode) init(ctx context.Context, cfg *Config, snapshotLog log2.Logger) error {
 	if err := n.initTracer(ctx, cfg); err != nil {
 		return err
 	}
@@ -180,7 +179,7 @@ func (n *OpNode) initRuntimeConfig(ctx context.Context, cfg *Config) error {
 	return errors.New("failed to load runtime configuration repeatedly")
 }
 
-func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger) error {
+func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log2.Logger) error {
 	rpcClient, err := cfg.L2.Setup(ctx, n.log)
 	if err != nil {
 		return fmt.Errorf("failed to setup L2 execution-engine RPC client: %w", err)
@@ -202,7 +201,7 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 	// If the L2 sync config is present, use it to create a sync client
 	if cfg.L2Sync != nil {
 		if err := cfg.L2Sync.Check(); err != nil {
-			log.Info("L2 sync config is not present, skipping L2 sync client setup", "err", err)
+			log2.Info("L2 sync config is not present, skipping L2 sync client setup", "err", err)
 		} else {
 			rpcSyncClient, err := cfg.L2Sync.Setup(ctx, n.log)
 			if err != nil {
@@ -252,7 +251,7 @@ func (n *OpNode) initMetricsServer(ctx context.Context, cfg *Config) error {
 	n.log.Info("starting metrics server", "addr", cfg.Metrics.ListenAddr, "port", cfg.Metrics.ListenPort)
 	go func() {
 		if err := n.metrics.Serve(ctx, cfg.Metrics.ListenAddr, cfg.Metrics.ListenPort); err != nil {
-			log.Crit("error starting metrics server", "err", err)
+			log2.Crit("error starting metrics server", "err", err)
 		}
 	}()
 	return nil

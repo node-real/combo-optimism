@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/ethereum-optimism/optimism/logutil/log"
+	"github.com/ethereum-optimism/optimism/op-node/logutil/log"
 )
 
 var ErrSubscriberClosed = errors.New("subscriber closed")

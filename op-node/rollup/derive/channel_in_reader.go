@@ -5,9 +5,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/ethereum-optimism/optimism/logutil/log"
-
 	"github.com/ethereum-optimism/optimism/op-node/eth"
+	"github.com/ethereum-optimism/optimism/op-node/logutil/log"
 )
 
 // Channel In Reader reads a batch from the channel

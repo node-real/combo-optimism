@@ -1,10 +1,10 @@
 package p2p
 
 import (
-	log "github.com/ethereum-optimism/optimism/logutil/log"
-
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	host "github.com/libp2p/go-libp2p/core/host"
+
+	"github.com/ethereum-optimism/optimism/op-node/logutil/log"
 )
 
 // ConfigurePeerScoring configures the peer scoring parameters for the pubsub

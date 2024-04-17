@@ -25,7 +25,7 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 	madns "github.com/multiformats/go-multiaddr-dns"
 
-	"github.com/ethereum-optimism/optimism/logutil/log"
+	"github.com/ethereum-optimism/optimism/op-node/logutil/log"
 )
 
 type ExtraHostFeatures interface {

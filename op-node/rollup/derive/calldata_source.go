@@ -10,9 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/ethereum-optimism/optimism/logutil/log"
-
 	"github.com/ethereum-optimism/optimism/op-node/eth"
+	log2 "github.com/ethereum-optimism/optimism/op-node/logutil/log"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 )
 
@@ -28,12 +27,12 @@ type L1TransactionFetcher interface {
 // batch submitter transactions.
 // This is not a stage in the pipeline, but a wrapper for another stage in the pipeline
 type DataSourceFactory struct {
-	log     log.Logger
+	log     log2.Logger
 	cfg     *rollup.Config
 	fetcher L1TransactionFetcher
 }
 
-func NewDataSourceFactory(log log.Logger, cfg *rollup.Config, fetcher L1TransactionFetcher) *DataSourceFactory {
+func NewDataSourceFactory(log log2.Logger, cfg *rollup.Config, fetcher L1TransactionFetcher) *DataSourceFactory {
 	return &DataSourceFactory{log: log, cfg: cfg, fetcher: fetcher}
 }
 
@@ -53,14 +52,14 @@ type DataSource struct {
 	id      eth.BlockID
 	cfg     *rollup.Config // TODO: `DataFromEVMTransactions` should probably not take the full config
 	fetcher L1TransactionFetcher
-	log     log.Logger
+	log     log2.Logger
 
 	batcherAddr common.Address
 }
 
 // NewDataSource creates a new calldata source. It suppresses errors in fetching the L1 block if they occur.
 // If there is an error, it will attempt to fetch the result on the next call to `Next`.
-func NewDataSource(ctx context.Context, log log.Logger, cfg *rollup.Config, fetcher L1TransactionFetcher, block eth.BlockID, batcherAddr common.Address) DataIter {
+func NewDataSource(ctx context.Context, log log2.Logger, cfg *rollup.Config, fetcher L1TransactionFetcher, block eth.BlockID, batcherAddr common.Address) DataIter {
 	_, txs, err := fetcher.InfoAndTxsByHash(ctx, block.Hash)
 	if err != nil {
 		return &DataSource{
@@ -86,7 +85,7 @@ func (ds *DataSource) Next(ctx context.Context) (eth.Data, error) {
 	if !ds.open {
 		if _, txs, err := ds.fetcher.InfoAndTxsByHash(ctx, ds.id.Hash); err == nil {
 			ds.open = true
-			ds.data = DataFromEVMTransactions(ds.cfg, ds.batcherAddr, txs, log.New("origin", ds.id))
+			ds.data = DataFromEVMTransactions(ds.cfg, ds.batcherAddr, txs, log2.New("origin", ds.id))
 		} else if errors.Is(err, ethereum.NotFound) {
 			return nil, NewResetError(fmt.Errorf("failed to open calldata source: %w", err))
 		} else {
@@ -105,7 +104,7 @@ func (ds *DataSource) Next(ctx context.Context) (eth.Data, error) {
 // DataFromEVMTransactions filters all of the transactions and returns the calldata from transactions
 // that are sent to the batch inbox address from the batch sender address.
 // This will return an empty array if no valid transactions are found.
-func DataFromEVMTransactions(config *rollup.Config, batcherAddr common.Address, txs types.Transactions, log log.Logger) []eth.Data {
+func DataFromEVMTransactions(config *rollup.Config, batcherAddr common.Address, txs types.Transactions, log log2.Logger) []eth.Data {
 	var out []eth.Data
 	l1Signer := config.L1Signer()
 	for j, tx := range txs {

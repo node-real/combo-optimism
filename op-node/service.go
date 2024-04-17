@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/ethereum-optimism/optimism/op-node/chaincfg"
+	log2 "github.com/ethereum-optimism/optimism/op-node/logutil/log"
 	"github.com/ethereum-optimism/optimism/op-node/sources"
 	oppprof "github.com/ethereum-optimism/optimism/op-service/pprof"
 
@@ -26,7 +26,7 @@ import (
 )
 
 // NewConfig creates a Config from the provided flags or environment variables.
-func NewConfig(ctx *cli.Context, log log.Logger) (*node.Config, error) {
+func NewConfig(ctx *cli.Context, log log2.Logger) (*node.Config, error) {
 	if err := flags.CheckRequired(ctx); err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func NewL1EndpointConfig(ctx *cli.Context) *node.L1EndpointConfig {
 	}
 }
 
-func NewL2EndpointConfig(ctx *cli.Context, log log.Logger) (*node.L2EndpointConfig, error) {
+func NewL2EndpointConfig(ctx *cli.Context, log log2.Logger) (*node.L2EndpointConfig, error) {
 	l2Addr := ctx.GlobalString(flags.L2EngineAddr.Name)
 	fileName := ctx.GlobalString(flags.L2EngineJWTSecret.Name)
 	var secret [32]byte
@@ -174,18 +174,18 @@ func NewRollupConfig(ctx *cli.Context) (*rollup.Config, error) {
 	return &rollupConfig, nil
 }
 
-func NewSnapshotLogger(ctx *cli.Context) (log.Logger, error) {
+func NewSnapshotLogger(ctx *cli.Context) (log2.Logger, error) {
 	snapshotFile := ctx.GlobalString(flags.SnapshotLog.Name)
-	handler := log.DiscardHandler()
+	handler := log2.DiscardHandler()
 	if snapshotFile != "" {
 		var err error
-		handler, err = log.FileHandler(snapshotFile, log.JSONFormat())
+		handler, err = log2.FileHandler(snapshotFile, log2.JSONFormat())
 		if err != nil {
 			return nil, err
 		}
-		handler = log.SyncHandler(handler)
+		handler = log2.SyncHandler(handler)
 	}
-	logger := log.New()
+	logger := log2.New()
 	logger.SetHandler(handler)
 	return logger, nil
 }
