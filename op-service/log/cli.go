@@ -5,10 +5,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/urfave/cli"
 	"golang.org/x/term"
 
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 

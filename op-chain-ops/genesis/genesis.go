@@ -6,13 +6,14 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 )
 
 const defaultL2GasLimit = 15_000_000
@@ -33,12 +34,12 @@ func NewL2Genesis(config *DeployConfig, block *types.Block) (*core.Genesis, erro
 	}
 
 	optimismChainConfig := params.ChainConfig{
-		ChainID:                       new(big.Int).SetUint64(config.L2ChainID),
-		HomesteadBlock:                big.NewInt(0),
-		DAOForkBlock:                  nil,
-		DAOForkSupport:                false,
-		EIP150Block:                   big.NewInt(0),
-		EIP150Hash:                    common.Hash{},
+		ChainID:        new(big.Int).SetUint64(config.L2ChainID),
+		HomesteadBlock: big.NewInt(0),
+		DAOForkBlock:   nil,
+		DAOForkSupport: false,
+		EIP150Block:    big.NewInt(0),
+		//EIP150Hash:                    common.Hash{},
 		EIP155Block:                   big.NewInt(0),
 		EIP158Block:                   big.NewInt(0),
 		ByzantiumBlock:                big.NewInt(0),
@@ -103,12 +104,12 @@ func NewL1Genesis(config *DeployConfig) (*core.Genesis, error) {
 	}
 
 	chainConfig := params.ChainConfig{
-		ChainID:             uint642Big(config.L1ChainID),
-		HomesteadBlock:      big.NewInt(0),
-		DAOForkBlock:        nil,
-		DAOForkSupport:      false,
-		EIP150Block:         big.NewInt(0),
-		EIP150Hash:          common.Hash{},
+		ChainID:        uint642Big(config.L1ChainID),
+		HomesteadBlock: big.NewInt(0),
+		DAOForkBlock:   nil,
+		DAOForkSupport: false,
+		EIP150Block:    big.NewInt(0),
+		//EIP150Hash:          common.Hash{},
 		EIP155Block:         big.NewInt(0),
 		EIP158Block:         big.NewInt(0),
 		ByzantiumBlock:      big.NewInt(0),

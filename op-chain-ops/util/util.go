@@ -1,7 +1,7 @@
 package util
 
 import (
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 )
 
 func ProgressLogger(n int, msg string) func(...any) {

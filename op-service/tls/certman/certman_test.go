@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/ethereum-optimism/optimism/op-service/tls/certman"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 )
 
 func TestValidPair(t *testing.T) {

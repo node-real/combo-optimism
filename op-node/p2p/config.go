@@ -6,7 +6,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	ds "github.com/ipfs/go-datastore"
@@ -20,6 +19,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/net/conngater"
 	cmgr "github.com/libp2p/go-libp2p/p2p/net/connmgr"
+
+	"github.com/ethereum-optimism/optimism/logutil/log"
 
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 )

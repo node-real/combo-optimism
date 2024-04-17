@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/solc"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -330,20 +331,20 @@ func encodeAddressValue(value any) (common.Hash, error) {
 			if !ok {
 				return common.Hash{}, errInvalidType
 			}
-			return address.Hash(), nil
+			return eth.AddressAsLeftPaddedHash(*address), nil
 		} else {
 			address, ok := value.(common.Address)
 			if !ok {
 				return common.Hash{}, errInvalidType
 			}
-			return address.Hash(), nil
+			return eth.AddressAsLeftPaddedHash(address), nil
 		}
 	case "string":
 		address, ok := value.(string)
 		if !ok {
 			return common.Hash{}, errInvalidType
 		}
-		return common.HexToAddress(address).Hash(), nil
+		return eth.AddressAsLeftPaddedHash(common.HexToAddress(address)), nil
 	default:
 		return common.Hash{}, errInvalidType
 	}

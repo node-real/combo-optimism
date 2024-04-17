@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"github.com/ethereum-optimism/optimism/bss-core/txmgr"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 )
 
 // ErrClearPendingRetry signals that a transaction from a previous running

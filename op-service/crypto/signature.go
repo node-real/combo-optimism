@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 
 	hdwallet "github.com/ethereum-optimism/go-ethereum-hdwallet"
 	opsigner "github.com/ethereum-optimism/optimism/op-signer/client"

@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-chain-ops/ether"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/schollz/progressbar/v3"
 	"github.com/urfave/cli"
 )

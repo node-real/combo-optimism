@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/hardhat"
@@ -443,14 +443,14 @@ func NewL2StorageConfig(config *DeployConfig, block *types.Block) (state.Storage
 		"msgNonce":         0,
 	}
 	storage["L1Block"] = state.StorageValues{
-		"number":    block.Number(),
-		"timestamp": block.Time(),
+		"number":         block.Number(),
+		"timestamp":      block.Time(),
 		"basefee":        block.BaseFee(),
 		"hash":           block.Hash(),
 		"sequenceNumber": 0,
-		"batcherHash":    config.BatchSenderAddress.Hash(),
-		"l1FeeOverhead":  config.GasPriceOracleOverhead,
-		"l1FeeScalar":    config.GasPriceOracleScalar,
+		//"batcherHash":    config.BatchSenderAddress.Hash(),
+		"l1FeeOverhead": config.GasPriceOracleOverhead,
+		"l1FeeScalar":   config.GasPriceOracleScalar,
 	}
 	if opservice.ForBSC {
 		storage["L1Block"]["basefee"] = derive.BSCFakeBaseFee

@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum-optimism/optimism/bss-core/dial"
 	"github.com/ethereum-optimism/optimism/bss-core/metrics"
 	"github.com/ethereum-optimism/optimism/bss-core/txmgr"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/getsentry/sentry-go"
 	"github.com/urfave/cli"
 )

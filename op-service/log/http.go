@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/ethereum-optimism/optimism/op-service/httputil"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 )
 
 func NewLoggingMiddleware(lgr log.Logger, next http.Handler) http.Handler {
