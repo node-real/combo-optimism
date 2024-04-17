@@ -1,8 +1,6 @@
 module github.com/ethereum-optimism/optimism
 
-go 1.21
-
-toolchain go1.21.9
+go 1.19
 
 require (
 	github.com/btcsuite/btcd v0.23.3
