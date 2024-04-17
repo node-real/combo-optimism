@@ -5,12 +5,14 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/libp2p/go-libp2p/core/peer"
+
+	"github.com/ethereum-optimism/optimism/logutil/log"
+
 	"github.com/ethereum-optimism/optimism/op-node/client"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/sources/caching"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 var ErrNoUnsafeL2PayloadChannel = errors.New("unsafeL2Payloads channel must not be nil")

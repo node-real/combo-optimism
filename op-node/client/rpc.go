@@ -6,13 +6,16 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/ethereum-optimism/optimism/op-service/backoff"
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/ethereum-optimism/optimism/op-node/metrics"
+	"github.com/ethereum-optimism/optimism/logutil/log"
+
+	"github.com/ethereum-optimism/optimism/op-service/backoff"
+
 	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/ethereum-optimism/optimism/op-node/metrics"
 )
 
 var httpRegex = regexp.MustCompile("^http(s)?://")

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 )
 
 // SendInterval determines the delay between requests. This must be larger than the MinHeartbeatInterval in the server.

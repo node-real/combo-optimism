@@ -4,11 +4,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
-	"github.com/ethereum-optimism/optimism/op-chain-ops/util"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 )
 
 var (
@@ -44,26 +44,31 @@ func PreCheckWithdrawals(db *state.StateDB, withdrawals DangerousUnfilteredWithd
 	var count int
 	var innerErr error
 	slotsAct := make(map[common.Hash]bool)
-	progress := util.ProgressLogger(1000, "Iterating legacy messages")
-	err := db.ForEachStorage(predeploys.LegacyMessagePasserAddr, func(key, value common.Hash) bool {
-		progress()
-		// When a message is inserted into the LegacyMessagePasser, it is stored with the value
-		// of the ABI encoding of "true". Although there should not be any other storage slots, we
-		// can safely ignore anything that is not "true".
-		if value != abiTrue {
-			// Should not happen!
-			innerErr = fmt.Errorf("%w: key: %s, val: %s", ErrUnknownSlotInMessagePasser, key.String(), value.String())
-			return true
-		}
+	//progress := util.ProgressLogger(1000, "Iterating legacy messages")
+	/*
+		err := db.ForEachStorage(predeploys.LegacyMessagePasserAddr, func(key, value common.Hash) bool {
+			progress()
+			// When a message is inserted into the LegacyMessagePasser, it is stored with the value
+			// of the ABI encoding of "true". Although there should not be any other storage slots, we
+			// can safely ignore anything that is not "true".
+			if value != abiTrue {
+				// Should not happen!
+				innerErr = fmt.Errorf("%w: key: %s, val: %s", ErrUnknownSlotInMessagePasser, key.String(), value.String())
+				return true
+			}
 
-		// Slot exists, so add it to the map.
-		slotsAct[key] = true
-		count++
-		return true
-	})
-	if err != nil {
-		return nil, fmt.Errorf("cannot iterate over LegacyMessagePasser: %w", err)
-	}
+			// Slot exists, so add it to the map.
+			slotsAct[key] = true
+			count++
+			return true
+		})
+
+
+		if err != nil {
+			return nil, fmt.Errorf("cannot iterate over LegacyMessagePasser: %w", err)
+		}
+	*/
+
 	if innerErr != nil {
 		return nil, innerErr
 	}

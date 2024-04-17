@@ -6,13 +6,13 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	opservice "github.com/ethereum-optimism/optimism/op-service"
 	"github.com/ethereum-optimism/optimism/op-service/txmgr"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 
 	opcrypto "github.com/ethereum-optimism/optimism/op-service/crypto"

@@ -7,10 +7,11 @@ import (
 	"github.com/ethereum-optimism/optimism/op-chain-ops/crossdomain"
 	"github.com/ethereum-optimism/optimism/op-chain-ops/util"
 
-	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 )
 
 const (
@@ -126,7 +127,7 @@ func doMigration(mutableDB *state.StateDB, dbFactory util.DBFactory, addresses [
 			// Accumulate addresses and total supply.
 			totalFound = new(big.Int).Add(totalFound, account.balance)
 
-			mutableDB.SetBalance(account.address, account.balance)
+			//mutableDB.SetBalance(account.address, account.balance)
 			mutableDB.SetState(predeploys.LegacyERC20ETHAddr, account.legacySlot, common.Hash{})
 			count++
 			seenAccounts[account.address] = true

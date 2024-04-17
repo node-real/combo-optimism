@@ -1,7 +1,7 @@
 package p2p
 
 import (
-	log "github.com/ethereum/go-ethereum/log"
+	log "github.com/ethereum-optimism/optimism/logutil/log"
 	peer "github.com/libp2p/go-libp2p/core/peer"
 	slices "golang.org/x/exp/slices"
 )

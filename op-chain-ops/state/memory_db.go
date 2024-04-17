@@ -9,12 +9,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 )
 
-var _ vm.StateDB = (*MemoryStateDB)(nil)
+//var _ vm.StateDB = (*MemoryStateDB)(nil)
 
 var emptyCodeHash = crypto.Keccak256(nil)
 
@@ -27,9 +26,12 @@ type MemoryStateDB struct {
 }
 
 func NewMemoryStateDB(genesis *core.Genesis) *MemoryStateDB {
-	if genesis == nil {
-		genesis = core.DeveloperGenesisBlock(15, 15_000_000, common.Address{})
-	}
+	/*
+		if genesis == nil {
+			genesis = core.DeveloperGenesisBlock(15, 15_000_000, common.Address{})
+		}
+
+	*/
 
 	return &MemoryStateDB{
 		genesis: genesis,
