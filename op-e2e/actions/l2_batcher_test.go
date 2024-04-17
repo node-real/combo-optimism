@@ -6,10 +6,10 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/stretchr/testify/require"
 

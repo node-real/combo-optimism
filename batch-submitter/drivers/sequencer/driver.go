@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum-optimism/optimism/bss-core/metrics"
 	"github.com/ethereum-optimism/optimism/bss-core/txmgr"
 	l2ethclient "github.com/ethereum-optimism/optimism/l2geth/ethclient"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -19,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
 )
 
 const (

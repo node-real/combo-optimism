@@ -8,12 +8,11 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/ethereum-optimism/optimism/op-node/chaincfg"
 	"github.com/ethereum-optimism/optimism/op-node/cmd/doc"
 
 	"github.com/urfave/cli"
-
-	"github.com/ethereum/go-ethereum/log"
 
 	opnode "github.com/ethereum-optimism/optimism/op-node"
 	"github.com/ethereum-optimism/optimism/op-node/cmd/genesis"

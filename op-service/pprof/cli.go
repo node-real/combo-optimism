@@ -4,8 +4,9 @@ import (
 	"errors"
 	"math"
 
-	opservice "github.com/ethereum-optimism/optimism/op-service"
 	"github.com/urfave/cli"
+
+	opservice "github.com/ethereum-optimism/optimism/op-service"
 )
 
 const (
@@ -19,19 +20,19 @@ func CLIFlags(envPrefix string) []cli.Flag {
 		cli.BoolFlag{
 			Name:   EnabledFlagName,
 			Usage:  "Enable the pprof server",
-			EnvVar: opservice.PrefixEnvVar(envPrefix, "PPROF_ENABLED"),
+			EnvVar: opservice.PrefixEnvVarPrevious(envPrefix, "PPROF_ENABLED"),
 		},
 		cli.StringFlag{
 			Name:   ListenAddrFlagName,
 			Usage:  "pprof listening address",
 			Value:  "0.0.0.0",
-			EnvVar: opservice.PrefixEnvVar(envPrefix, "PPROF_ADDR"),
+			EnvVar: opservice.PrefixEnvVarPrevious(envPrefix, "PPROF_ADDR"),
 		},
 		cli.IntFlag{
 			Name:   PortFlagName,
 			Usage:  "pprof listening port",
 			Value:  6060,
-			EnvVar: opservice.PrefixEnvVar(envPrefix, "PPROF_PORT"),
+			EnvVar: opservice.PrefixEnvVarPrevious(envPrefix, "PPROF_PORT"),
 		},
 	}
 }

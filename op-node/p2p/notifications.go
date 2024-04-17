@@ -6,7 +6,7 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-node/metrics"
 
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 )
 
 type NotificationsMetricer interface {

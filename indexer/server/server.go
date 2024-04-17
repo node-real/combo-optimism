@@ -8,7 +8,7 @@ import (
 
 	"github.com/ethereum-optimism/optimism/indexer/metrics"
 
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 )
 
 // RespondWithError writes the given error code and message to the writer.

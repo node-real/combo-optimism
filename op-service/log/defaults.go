@@ -3,7 +3,7 @@ package log
 import (
 	"os"
 
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 )
 
 func SetupDefaults() {
@@ -13,4 +13,5 @@ func SetupDefaults() {
 			log.StreamHandler(os.Stdout, log.LogfmtFormat()),
 		),
 	)
+
 }

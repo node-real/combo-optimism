@@ -1,8 +1,6 @@
 package genesis
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -13,13 +11,10 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/trie"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum-optimism/optimism/op-chain-ops/deployer"
-	"github.com/ethereum-optimism/optimism/op-chain-ops/state"
 )
 
 var proxies = []string{
@@ -36,221 +31,224 @@ var portalMeteringSlot = common.Hash{31: 0x01}
 var zeroHash common.Hash
 
 func BuildL1DeveloperGenesis(config *DeployConfig) (*core.Genesis, error) {
-	if config.L2OutputOracleStartingTimestamp != -1 {
-		return nil, errors.New("l2oo starting timestamp must be -1")
-	}
-
-	if config.L1GenesisBlockTimestamp == 0 {
-		return nil, errors.New("must specify l1 genesis block timestamp")
-	}
-
-	genesis, err := NewL1Genesis(config)
-	if err != nil {
-		return nil, err
-	}
-
-	backend := deployer.NewBackendWithGenesisTimestamp(uint64(config.L1GenesisBlockTimestamp))
-
-	deployments, err := deployL1Contracts(config, backend)
-	if err != nil {
-		return nil, err
-	}
-
-	depsByName := make(map[string]deployer.Deployment)
-	depsByAddr := make(map[common.Address]deployer.Deployment)
-	for _, dep := range deployments {
-		depsByName[dep.Name] = dep
-		depsByAddr[dep.Address] = dep
-	}
-
-	opts, err := bind.NewKeyedTransactorWithChainID(deployer.TestKey, deployer.ChainID)
-	if err != nil {
-		return nil, err
-	}
-	sysCfgABI, err := bindings.SystemConfigMetaData.GetAbi()
-	if err != nil {
-		return nil, err
-	}
-	gasLimit := uint64(config.L2GenesisBlockGasLimit)
-	if gasLimit == 0 {
-		gasLimit = defaultL2GasLimit
-	}
-	data, err := sysCfgABI.Pack(
-		"initialize",
-		config.FinalSystemOwner,
-		uint642Big(config.GasPriceOracleOverhead),
-		uint642Big(config.GasPriceOracleScalar),
-		config.BatchSenderAddress.Hash(),
-		gasLimit,
-		config.P2PSequencerAddress,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("cannot abi encode initialize for SystemConfig: %w", err)
-	}
-	if _, err := upgradeProxy(
-		backend,
-		opts,
-		depsByName["SystemConfigProxy"].Address,
-		depsByName["SystemConfig"].Address,
-		data,
-	); err != nil {
-		return nil, err
-	}
-
-	l2ooABI, err := bindings.L2OutputOracleMetaData.GetAbi()
-	if err != nil {
-		return nil, err
-	}
-	data, err = l2ooABI.Pack(
-		"initialize",
-		big.NewInt(0),
-		uint642Big(uint64(config.L1GenesisBlockTimestamp)),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("cannot abi encode initialize for L2OutputOracle: %w", err)
-	}
-	if _, err := upgradeProxy(
-		backend,
-		opts,
-		depsByName["L2OutputOracleProxy"].Address,
-		depsByName["L2OutputOracle"].Address,
-		data,
-	); err != nil {
-		return nil, err
-	}
-
-	portalABI, err := bindings.OptimismPortalMetaData.GetAbi()
-	if err != nil {
-		return nil, err
-	}
-	// Initialize the OptimismPortal without being paused
-	data, err = portalABI.Pack("initialize", false)
-	if err != nil {
-		return nil, fmt.Errorf("cannot abi encode initialize for OptimismPortal: %w", err)
-	}
-	if _, err := upgradeProxy(
-		backend,
-		opts,
-		depsByName["OptimismPortalProxy"].Address,
-		depsByName["OptimismPortal"].Address,
-		data,
-	); err != nil {
-		return nil, err
-	}
-	l1XDMABI, err := bindings.L1CrossDomainMessengerMetaData.GetAbi()
-	if err != nil {
-		return nil, err
-	}
-	data, err = l1XDMABI.Pack("initialize")
-	if err != nil {
-		return nil, fmt.Errorf("cannot abi encode initialize for L1CrossDomainMessenger: %w", err)
-	}
-	if _, err := upgradeProxy(
-		backend,
-		opts,
-		depsByName["L1CrossDomainMessengerProxy"].Address,
-		depsByName["L1CrossDomainMessenger"].Address,
-		data,
-	); err != nil {
-		return nil, err
-	}
-
-	if _, err := upgradeProxy(
-		backend,
-		opts,
-		depsByName["L1StandardBridgeProxy"].Address,
-		depsByName["L1StandardBridge"].Address,
-		nil,
-	); err != nil {
-		return nil, err
-	}
-
-	var lastUpgradeTx *types.Transaction
-	if lastUpgradeTx, err = upgradeProxy(
-		backend,
-		opts,
-		depsByName["OptimismMintableERC20FactoryProxy"].Address,
-		depsByName["OptimismMintableERC20Factory"].Address,
-		nil,
-	); err != nil {
-		return nil, err
-	}
-
-	// Commit all the upgrades at once, then wait for the last
-	// transaction to be mined. The simulator performs async
-	// processing, and as such we need to wait for the transaction
-	// receipt to appear before considering the above transactions
-	// committed to the chain.
-
-	backend.Commit()
-	if _, err := bind.WaitMined(context.Background(), backend, lastUpgradeTx); err != nil {
-		return nil, err
-	}
-
-	memDB := state.NewMemoryStateDB(genesis)
-	if err := SetL1Proxies(memDB, predeploys.DevProxyAdminAddr); err != nil {
-		return nil, err
-	}
-	FundDevAccounts(memDB)
-	SetPrecompileBalances(memDB)
-
-	for name, proxyAddr := range predeploys.DevPredeploys {
-		memDB.SetState(*proxyAddr, ImplementationSlot, depsByName[name].Address.Hash())
-
-		// Special case for WETH since it was not designed to be behind a proxy
-		if name == "WETH9" {
-			name, _ := state.EncodeStringValue("Wrapped Ether", 0)
-			symbol, _ := state.EncodeStringValue("WETH", 0)
-			decimals, _ := state.EncodeUintValue(18, 0)
-			memDB.SetState(*proxyAddr, common.Hash{}, name)
-			memDB.SetState(*proxyAddr, common.Hash{31: 0x01}, symbol)
-			memDB.SetState(*proxyAddr, common.Hash{31: 0x02}, decimals)
+	/*
+		if config.L2OutputOracleStartingTimestamp != -1 {
+			return nil, errors.New("l2oo starting timestamp must be -1")
 		}
-	}
 
-	stateDB, err := backend.Blockchain().State()
-	if err != nil {
-		return nil, err
-	}
+		if config.L1GenesisBlockTimestamp == 0 {
+			return nil, errors.New("must specify l1 genesis block timestamp")
+		}
 
-	for _, dep := range deployments {
-		st, err := stateDB.StorageTrie(dep.Address)
+		genesis, err := NewL1Genesis(config)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open storage trie of %s: %w", dep.Address, err)
-		}
-		if st == nil {
-			return nil, fmt.Errorf("missing account %s in state, address: %s", dep.Name, dep.Address)
-		}
-		iter := trie.NewIterator(st.NodeIterator(nil))
-
-		depAddr := dep.Address
-		if strings.HasSuffix(dep.Name, "Proxy") {
-			depAddr = *predeploys.DevPredeploys[strings.TrimSuffix(dep.Name, "Proxy")]
+			return nil, err
 		}
 
-		memDB.CreateAccount(depAddr)
-		memDB.SetCode(depAddr, dep.Bytecode)
+		backend := deployer.NewBackendWithGenesisTimestamp(uint64(config.L1GenesisBlockTimestamp))
 
-		for iter.Next() {
-			_, data, _, err := rlp.Split(iter.Value)
+		deployments, err := deployL1Contracts(config, backend)
+		if err != nil {
+			return nil, err
+		}
+
+		depsByName := make(map[string]deployer.Deployment)
+		depsByAddr := make(map[common.Address]deployer.Deployment)
+		for _, dep := range deployments {
+			depsByName[dep.Name] = dep
+			depsByAddr[dep.Address] = dep
+		}
+
+		opts, err := bind.NewKeyedTransactorWithChainID(deployer.TestKey, deployer.ChainID)
+		if err != nil {
+			return nil, err
+		}
+		sysCfgABI, err := bindings.SystemConfigMetaData.GetAbi()
+		if err != nil {
+			return nil, err
+		}
+		gasLimit := uint64(config.L2GenesisBlockGasLimit)
+		if gasLimit == 0 {
+			gasLimit = defaultL2GasLimit
+		}
+		data, err := sysCfgABI.Pack(
+			"initialize",
+			config.FinalSystemOwner,
+			uint642Big(config.GasPriceOracleOverhead),
+			uint642Big(config.GasPriceOracleScalar),
+			config.BatchSenderAddress.Hash(),
+			gasLimit,
+			config.P2PSequencerAddress,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("cannot abi encode initialize for SystemConfig: %w", err)
+		}
+		if _, err := upgradeProxy(
+			backend,
+			opts,
+			depsByName["SystemConfigProxy"].Address,
+			depsByName["SystemConfig"].Address,
+			data,
+		); err != nil {
+			return nil, err
+		}
+
+		l2ooABI, err := bindings.L2OutputOracleMetaData.GetAbi()
+		if err != nil {
+			return nil, err
+		}
+		data, err = l2ooABI.Pack(
+			"initialize",
+			big.NewInt(0),
+			uint642Big(uint64(config.L1GenesisBlockTimestamp)),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("cannot abi encode initialize for L2OutputOracle: %w", err)
+		}
+		if _, err := upgradeProxy(
+			backend,
+			opts,
+			depsByName["L2OutputOracleProxy"].Address,
+			depsByName["L2OutputOracle"].Address,
+			data,
+		); err != nil {
+			return nil, err
+		}
+
+		portalABI, err := bindings.OptimismPortalMetaData.GetAbi()
+		if err != nil {
+			return nil, err
+		}
+		// Initialize the OptimismPortal without being paused
+		data, err = portalABI.Pack("initialize", false)
+		if err != nil {
+			return nil, fmt.Errorf("cannot abi encode initialize for OptimismPortal: %w", err)
+		}
+		if _, err := upgradeProxy(
+			backend,
+			opts,
+			depsByName["OptimismPortalProxy"].Address,
+			depsByName["OptimismPortal"].Address,
+			data,
+		); err != nil {
+			return nil, err
+		}
+		l1XDMABI, err := bindings.L1CrossDomainMessengerMetaData.GetAbi()
+		if err != nil {
+			return nil, err
+		}
+		data, err = l1XDMABI.Pack("initialize")
+		if err != nil {
+			return nil, fmt.Errorf("cannot abi encode initialize for L1CrossDomainMessenger: %w", err)
+		}
+		if _, err := upgradeProxy(
+			backend,
+			opts,
+			depsByName["L1CrossDomainMessengerProxy"].Address,
+			depsByName["L1CrossDomainMessenger"].Address,
+			data,
+		); err != nil {
+			return nil, err
+		}
+
+		if _, err := upgradeProxy(
+			backend,
+			opts,
+			depsByName["L1StandardBridgeProxy"].Address,
+			depsByName["L1StandardBridge"].Address,
+			nil,
+		); err != nil {
+			return nil, err
+		}
+
+		var lastUpgradeTx *types.Transaction
+		if lastUpgradeTx, err = upgradeProxy(
+			backend,
+			opts,
+			depsByName["OptimismMintableERC20FactoryProxy"].Address,
+			depsByName["OptimismMintableERC20Factory"].Address,
+			nil,
+		); err != nil {
+			return nil, err
+		}
+
+		// Commit all the upgrades at once, then wait for the last
+		// transaction to be mined. The simulator performs async
+		// processing, and as such we need to wait for the transaction
+		// receipt to appear before considering the above transactions
+		// committed to the chain.
+
+		backend.Commit()
+		if _, err := bind.WaitMined(context.Background(), backend, lastUpgradeTx); err != nil {
+			return nil, err
+		}
+
+		memDB := state.NewMemoryStateDB(genesis)
+		if err := SetL1Proxies(memDB, predeploys.DevProxyAdminAddr); err != nil {
+			return nil, err
+		}
+		FundDevAccounts(memDB)
+		SetPrecompileBalances(memDB)
+
+		for name, proxyAddr := range predeploys.DevPredeploys {
+			memDB.SetState(*proxyAddr, ImplementationSlot, depsByName[name].Address.Hash())
+
+			// Special case for WETH since it was not designed to be behind a proxy
+			if name == "WETH9" {
+				name, _ := state.EncodeStringValue("Wrapped Ether", 0)
+				symbol, _ := state.EncodeStringValue("WETH", 0)
+				decimals, _ := state.EncodeUintValue(18, 0)
+				memDB.SetState(*proxyAddr, common.Hash{}, name)
+				memDB.SetState(*proxyAddr, common.Hash{31: 0x01}, symbol)
+				memDB.SetState(*proxyAddr, common.Hash{31: 0x02}, decimals)
+			}
+		}
+
+		stateDB, err := backend.Blockchain().State()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, dep := range deployments {
+			st, err := stateDB.StorageTrie(dep.Address)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to open storage trie of %s: %w", dep.Address, err)
+			}
+			if st == nil {
+				return nil, fmt.Errorf("missing account %s in state, address: %s", dep.Name, dep.Address)
+			}
+			iter := trie.NewIterator(st.NodeIterator(nil))
+
+			depAddr := dep.Address
+			if strings.HasSuffix(dep.Name, "Proxy") {
+				depAddr = *predeploys.DevPredeploys[strings.TrimSuffix(dep.Name, "Proxy")]
 			}
 
-			key := common.BytesToHash(st.GetKey(iter.Key))
-			value := common.BytesToHash(data)
+			memDB.CreateAccount(depAddr)
+			memDB.SetCode(depAddr, dep.Bytecode)
 
-			if depAddr == predeploys.DevOptimismPortalAddr && key == portalMeteringSlot {
-				// We need to manually set the block number in the resource
-				// metering storage slot to zero. Otherwise, deposits will
-				// revert.
-				copy(value[:24], zeroHash[:])
+			for iter.Next() {
+				_, data, _, err := rlp.Split(iter.Value)
+				if err != nil {
+					return nil, err
+				}
+
+				key := common.BytesToHash(st.GetKey(iter.Key))
+				value := common.BytesToHash(data)
+
+				if depAddr == predeploys.DevOptimismPortalAddr && key == portalMeteringSlot {
+					// We need to manually set the block number in the resource
+					// metering storage slot to zero. Otherwise, deposits will
+					// revert.
+					copy(value[:24], zeroHash[:])
+				}
+
+				memDB.SetState(depAddr, key, value)
 			}
-
-			memDB.SetState(depAddr, key, value)
 		}
-	}
-	return memDB.Genesis(), nil
+	
+	*/
+	return nil, nil
 }
 
 func deployL1Contracts(config *DeployConfig, backend *backends.SimulatedBackend) ([]deployer.Deployment, error) {
@@ -271,7 +269,7 @@ func deployL1Contracts(config *DeployConfig, backend *backends.SimulatedBackend)
 				config.FinalSystemOwner,
 				uint642Big(config.GasPriceOracleOverhead),
 				uint642Big(config.GasPriceOracleScalar),
-				config.BatchSenderAddress.Hash(), // left-padded 32 bytes value, version is zero anyway
+				//config.BatchSenderAddress.Hash(), // left-padded 32 bytes value, version is zero anyway
 				gasLimit,
 				config.P2PSequencerAddress,
 			},

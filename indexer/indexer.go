@@ -21,7 +21,7 @@ import (
 	"github.com/ethereum-optimism/optimism/indexer/services/l1"
 	"github.com/ethereum-optimism/optimism/indexer/services/l2"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gorilla/mux"
 	"github.com/urfave/cli"

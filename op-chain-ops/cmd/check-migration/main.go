@@ -9,27 +9,27 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-chain-ops/crossdomain"
 
-	"github.com/ethereum-optimism/optimism/op-chain-ops/db"
-	"github.com/mattn/go-isatty"
+	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/ethereum-optimism/optimism/op-chain-ops/db"
 	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
-	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/hardhat"
 
-	"github.com/ethereum-optimism/optimism/op-chain-ops/genesis"
 	"github.com/ethereum/go-ethereum/ethclient"
+
+	"github.com/ethereum-optimism/optimism/op-chain-ops/genesis"
 
 	"github.com/urfave/cli"
 )
 
 func main() {
-	log.Root().SetHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(isatty.IsTerminal(os.Stderr.Fd()))))
+	//log.Root().SetHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(isatty.IsTerminal(os.Stderr.Fd()))))
 
 	app := &cli.App{
 		Name:  "check-migration",

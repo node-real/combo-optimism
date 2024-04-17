@@ -3,9 +3,9 @@ package ether
 import (
 	"path/filepath"
 
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/log"
 )
 
 // MustOpenDB opens a Geth database, or panics. Note that

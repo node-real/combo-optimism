@@ -18,11 +18,12 @@ import (
 	"github.com/multiformats/go-multiaddr"
 
 	gcrypto "github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/rlp"
+
+	"github.com/ethereum-optimism/optimism/logutil/log"
 
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -100,7 +101,7 @@ func (conf *Config) Discovery(log log.Logger, rollupCfg *rollup.Config, tcpPort 
 		NetRestrict:  nil,
 		Bootnodes:    conf.Bootnodes,
 		Unhandled:    nil, // Not used in dv5
-		Log:          log,
+		Log:          nil,
 		ValidSchemes: enode.ValidSchemes,
 	}
 	udpV5, err := discover.ListenV5(conn, localNode, cfg)

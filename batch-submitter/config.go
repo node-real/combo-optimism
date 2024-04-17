@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/urfave/cli"
 
 	"github.com/ethereum-optimism/optimism/batch-submitter/flags"

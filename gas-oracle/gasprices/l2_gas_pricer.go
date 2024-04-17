@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 )
 
 type GetTargetGasPerSecond func() float64

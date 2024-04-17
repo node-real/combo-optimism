@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum-optimism/optimism/gas-oracle/flags"
 	ometrics "github.com/ethereum-optimism/optimism/gas-oracle/metrics"
 	"github.com/ethereum-optimism/optimism/gas-oracle/oracle"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/ethereum/go-ethereum/metrics/influxdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli"

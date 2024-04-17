@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum-optimism/optimism/indexer/metrics"
 	"github.com/ethereum-optimism/optimism/indexer/server"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/gorilla/mux"
 )
 

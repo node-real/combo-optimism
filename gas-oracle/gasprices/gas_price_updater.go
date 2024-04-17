@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 )
 
 type GetLatestBlockNumberFn func() (uint64, error)

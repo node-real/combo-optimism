@@ -6,10 +6,10 @@ import (
 
 	"github.com/urfave/cli"
 
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/ethereum-optimism/optimism/op-batcher/batcher"
 	"github.com/ethereum-optimism/optimism/op-batcher/flags"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
-	"github.com/ethereum/go-ethereum/log"
 )
 
 var (

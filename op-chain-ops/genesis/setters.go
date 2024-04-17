@@ -6,12 +6,13 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 
+	"github.com/ethereum-optimism/optimism/logutil/log"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
+
 	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum-optimism/optimism/op-chain-ops/immutables"
 	"github.com/ethereum-optimism/optimism/op-chain-ops/state"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/log"
 )
 
 // UntouchableCodeHashes contains code hashes of all the contracts
@@ -58,7 +59,7 @@ var (
 func FundDevAccounts(db vm.StateDB) {
 	for _, account := range DevAccounts {
 		db.CreateAccount(account)
-		db.AddBalance(account, devBalance)
+		//db.AddBalance(account, devBalance)
 	}
 }
 
@@ -124,7 +125,7 @@ func setProxies(db vm.StateDB, proxyAdminAddr common.Address, namespace *big.Int
 		}
 
 		db.SetCode(addr, depBytecode)
-		db.SetState(addr, AdminSlot, proxyAdminAddr.Hash())
+		//db.SetState(addr, AdminSlot, proxyAdminAddr.Hash())
 		log.Trace("Set proxy", "address", addr, "admin", proxyAdminAddr)
 	}
 
@@ -167,7 +168,7 @@ func SetImplementations(db vm.StateDB, storage state.StorageConfig, immutable im
 			db.CreateAccount(codeAddr)
 		}
 
-		db.SetState(*address, ImplementationSlot, codeAddr.Hash())
+		//db.SetState(*address, ImplementationSlot, codeAddr.Hash())
 
 		if err := setupPredeploy(db, deployResults, storage, name, *address, codeAddr); err != nil {
 			return err
@@ -219,7 +220,7 @@ func SetPrecompileBalances(db vm.StateDB) {
 	for i := 0; i < 256; i++ {
 		addr := common.BytesToAddress([]byte{byte(i)})
 		db.CreateAccount(addr)
-		db.AddBalance(addr, common.Big1)
+		//db.AddBalance(addr, common.Big1)
 	}
 }
 

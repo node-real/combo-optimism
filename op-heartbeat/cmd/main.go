@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	heartbeat "github.com/ethereum-optimism/optimism/op-heartbeat"
 	"github.com/ethereum-optimism/optimism/op-heartbeat/flags"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/urfave/cli"
 )
 

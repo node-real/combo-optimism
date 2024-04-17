@@ -5,17 +5,18 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
-	"github.com/ethereum-optimism/optimism/op-chain-ops/crossdomain"
-	"github.com/ethereum-optimism/optimism/op-chain-ops/ether"
+	"github.com/ethereum-optimism/optimism/logutil/log"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+
+	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
+	"github.com/ethereum-optimism/optimism/op-chain-ops/crossdomain"
+	"github.com/ethereum-optimism/optimism/op-chain-ops/ether"
 )
 
 var (
@@ -86,7 +87,7 @@ func MigrateDB(ldb ethdb.Database, config *DeployConfig, l1Block *types.Block, m
 		// Set up the backing store.
 		underlyingDB := state.NewDatabaseWithConfig(ldb, &trie.Config{
 			Preimages: true,
-			Cache:     1024,
+			//Cache:     1024,
 		})
 
 		// Open up the state database.
@@ -203,17 +204,17 @@ func MigrateDB(ldb ethdb.Database, config *DeployConfig, l1Block *types.Block, m
 	// We're done messing around with the database, so we can now commit the changes to the DB.
 	// Note that this doesn't actually write the changes to disk.
 	log.Info("Committing state DB")
-	newRoot, err := db.Commit(true)
+	//newRoot, err := db.Commit(true)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create the header for the Bedrock transition block.
 	bedrockHeader := &types.Header{
-		ParentHash:  header.Hash(),
-		UncleHash:   types.EmptyUncleHash,
-		Coinbase:    predeploys.SequencerFeeVaultAddr,
-		Root:        newRoot,
+		ParentHash: header.Hash(),
+		UncleHash:  types.EmptyUncleHash,
+		Coinbase:   predeploys.SequencerFeeVaultAddr,
+		//Root:        newRoot,
 		TxHash:      types.EmptyRootHash,
 		ReceiptHash: types.EmptyRootHash,
 		Bloom:       types.Bloom{},
@@ -257,9 +258,12 @@ func MigrateDB(ldb ethdb.Database, config *DeployConfig, l1Block *types.Block, m
 
 	// Otherwise we need to write the changes to disk. First we commit the state changes.
 	log.Info("Committing trie DB")
-	if err := db.Database().TrieDB().Commit(newRoot, true); err != nil {
-		return nil, err
-	}
+	/*
+		if err := db.Database().TrieDB().Commit(newRoot, true); err != nil {
+			return nil, err
+		}
+
+	*/
 
 	// Next we write the Bedrock transition block to the database.
 	rawdb.WriteTd(ldb, bedrockBlock.Hash(), bedrockBlock.NumberU64(), bedrockBlock.Difficulty())
