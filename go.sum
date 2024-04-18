@@ -25,8 +25,8 @@ dmitri.shuralyov.com/html/belt v0.0.0-20180602232347-f7d459c86be0/go.mod h1:JLBr
 dmitri.shuralyov.com/service/change v0.0.0-20181023043359-a85b471d5412/go.mod h1:a1inKt/atXimZ4Mv927x+r7UpyzRUf4emIoiiSC2TN4=
 dmitri.shuralyov.com/state v0.0.0-20180228185332-28bcc343414c/go.mod h1:0PRwlb0D6DFvNNtx+9ybjezNCa8XF0xaYcETyp6rHWU=
 git.apache.org/thrift.git v0.0.0-20180902110319-2566ecd5d999/go.mod h1:fPE2ZNJGynbRyZ4dJvy6G277gSllfV2HJqblrnkyeyg=
-github.com/2129zxl/combo-op-geth v1.11.2-de8c5df46.0.20240417102128-821425ab0570 h1:yPLYpH9MsbQv2x8fafkIEtHAZSw9L22ZnOB8NT/qf38=
-github.com/2129zxl/combo-op-geth v1.11.2-de8c5df46.0.20240417102128-821425ab0570/go.mod h1:Z4cb0dhx4KjCC7VC40Lp08+/Ub8EHuvO20woFrsu2Ho=
+github.com/2129zxl/combo-op-geth v1.11.2-de8c5df46.0.20240418014615-cc0a45445cf3 h1:VHco9fcXR6s0lTxC+qLay0iN1WB8AYvK6hijI5cxZgU=
+github.com/2129zxl/combo-op-geth v1.11.2-de8c5df46.0.20240418014615-cc0a45445cf3/go.mod h1:Z4cb0dhx4KjCC7VC40Lp08+/Ub8EHuvO20woFrsu2Ho=
 github.com/AndreasBriese/bbloom v0.0.0-20190306092124-e2d15f34fcf9/go.mod h1:bOvUY6CB00SOBii9/FifXqc0awNKxLFCL/+pkDPuyl8=
 github.com/AndreasBriese/bbloom v0.0.0-20190825152654-46b345b51c96 h1:cTp8I5+VIoKjsnZuH8vjyaysT/ses3EvZeaV/1UkF2M=
 github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 h1:UQHMgLO+TxOElx5B5HZ4hJQsoJ/PvUvKRhJHDQXO8P8=
