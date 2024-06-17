@@ -1,7 +1,8 @@
-FROM --platform=$BUILDPLATFORM golang:1.19.9-alpine3.16 as builder
+FROM --platform=$BUILDPLATFORM golang:1.21.5-alpine3.18 as builder
 
 ARG VERSION=v0.0.0
 
+RUN apk add --no-cache build-base libc-dev
 RUN apk add --no-cache make gcc musl-dev linux-headers git jq bash
 
 # build op-batcher with the shared go.mod & go.sum files
@@ -9,8 +10,8 @@ COPY ./op-batcher /app/op-batcher
 COPY ./op-bindings /app/op-bindings
 COPY ./op-node /app/op-node
 COPY ./op-service /app/op-service
-COPY ./op-signer /app/op-signer
 COPY ./op-aws-sdk /app/op-aws-sdk
+COPY ./op-plasma /app/op-plasma
 COPY ./go.mod /app/go.mod
 COPY ./go.sum /app/go.sum
 
@@ -22,9 +23,13 @@ RUN go mod download
 
 ARG TARGETOS TARGETARCH
 
+ENV CGO_CFLAGS="-O -D__BLST_PORTABLE__"
+ENV CGO_CFLAGS_ALLOW="-O -D__BLST_PORTABLE__"
 RUN make op-batcher VERSION="$VERSION" GOOS=$TARGETOS GOARCH=$TARGETARCH
 
-FROM alpine:3.16
+FROM alpine:3.18
+
+RUN apk add --no-cache libstdc++
 
 COPY --from=builder /app/op-batcher/bin/op-batcher /usr/local/bin
 

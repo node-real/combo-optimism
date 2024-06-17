@@ -1,21 +1,23 @@
 package metrics
 
 import (
-	"context"
+	"io"
 
-	"github.com/ethereum/go-ethereum"
-
-	"github.com/ethereum-optimism/optimism/op-node/eth"
-
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
 	txmetrics "github.com/ethereum-optimism/optimism/op-service/txmgr/metrics"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 const Namespace = "op_proposer"
+const RPCClientSubsystem = "rpc_client"
+
+// implements the Registry getter, for metrics HTTP server to hook into
+var _ opmetrics.RegistryMetricer = (*Metrics)(nil)
 
 type Metricer interface {
 	RecordInfo(version string)
@@ -26,6 +28,8 @@ type Metricer interface {
 
 	// Record Tx metrics
 	txmetrics.TxMetricer
+
+	StartBalanceMetrics(l log.Logger, client ethereum.ChainStateReader, account common.Address) io.Closer
 
 	RecordL2BlocksProposed(l2ref eth.L2BlockRef)
 }
@@ -76,13 +80,12 @@ func NewMetrics(procName string) *Metrics {
 	}
 }
 
-func (m *Metrics) Serve(ctx context.Context, host string, port int) error {
-	return opmetrics.ListenAndServe(ctx, m.registry, host, port)
+func (m *Metrics) Registry() *prometheus.Registry {
+	return m.registry
 }
 
-func (m *Metrics) StartBalanceMetrics(ctx context.Context,
-	l log.Logger, client ethereum.ChainStateReader, account common.Address) {
-	opmetrics.LaunchBalanceMetrics(ctx, l, m.registry, m.ns, client, account)
+func (m *Metrics) StartBalanceMetrics(l log.Logger, client ethereum.ChainStateReader, account common.Address) io.Closer {
+	return opmetrics.LaunchBalanceMetrics(l, m.registry, m.ns, client, account)
 }
 
 // RecordInfo sets a pseudo-metric that contains versioning and

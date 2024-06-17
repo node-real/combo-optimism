@@ -3,6 +3,7 @@ package p2p
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/netutil"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -25,9 +27,36 @@ import (
 )
 
 var DefaultBootnodes = []*enode.Node{
-	enode.MustParse("enode://869d07b5932f17e8490990f75a3f94195e9504ddb6b85f7189e5a9c0a8fff8b00aecf6f3ac450ecba6cdabdb5858788a94bde2b613e0f2d82e9b395355f76d1a@34.65.67.101:0?discport=30305"),
-	enode.MustParse("enode://2d4e7e9d48f4dd4efe9342706dd1b0024681bd4c3300d021f86fc75eab7865d4e0cbec6fbc883f011cfd6a57423e7e2f6e104baad2b744c3cafaec6bc7dc92c1@34.65.43.171:0?discport=30305"),
-	enode.MustParse("enode://9d7a3efefe442351217e73b3a593bcb8efffb55b4807699972145324eab5e6b382152f8d24f6301baebbfb5ecd4127bd3faab2842c04cd432bdf50ba092f6645@34.65.109.126:0?discport=30305"),
+	// OP Labs
+	enode.MustParse("enode://869d07b5932f17e8490990f75a3f94195e9504ddb6b85f7189e5a9c0a8fff8b00aecf6f3ac450ecba6cdabdb5858788a94bde2b613e0f2d82e9b395355f76d1a@34.65.67.101:30305"),
+	enode.MustParse("enode://2d4e7e9d48f4dd4efe9342706dd1b0024681bd4c3300d021f86fc75eab7865d4e0cbec6fbc883f011cfd6a57423e7e2f6e104baad2b744c3cafaec6bc7dc92c1@34.65.43.171:30305"),
+	enode.MustParse("enode://9d7a3efefe442351217e73b3a593bcb8efffb55b4807699972145324eab5e6b382152f8d24f6301baebbfb5ecd4127bd3faab2842c04cd432bdf50ba092f6645@34.65.109.126:30305"),
+	// Base
+	enode.MustParse("enr:-J24QNz9lbrKbN4iSmmjtnr7SjUMk4zB7f1krHZcTZx-JRKZd0kA2gjufUROD6T3sOWDVDnFJRvqBBo62zuF-hYCohOGAYiOoEyEgmlkgnY0gmlwhAPniryHb3BzdGFja4OFQgCJc2VjcDI1NmsxoQKNVFlCxh_B-716tTs-h1vMzZkSs1FTu_OYTNjgufplG4N0Y3CCJAaDdWRwgiQG"),
+	enode.MustParse("enr:-J24QH-f1wt99sfpHy4c0QJM-NfmsIfmlLAMMcgZCUEgKG_BBYFc6FwYgaMJMQN5dsRBJApIok0jFn-9CS842lGpLmqGAYiOoDRAgmlkgnY0gmlwhLhIgb2Hb3BzdGFja4OFQgCJc2VjcDI1NmsxoQJ9FTIv8B9myn1MWaC_2lJ-sMoeCDkusCsk4BYHjjCq04N0Y3CCJAaDdWRwgiQG"),
+	enode.MustParse("enr:-J24QDXyyxvQYsd0yfsN0cRr1lZ1N11zGTplMNlW4xNEc7LkPXh0NAJ9iSOVdRO95GPYAIc6xmyoCCG6_0JxdL3a0zaGAYiOoAjFgmlkgnY0gmlwhAPckbGHb3BzdGFja4OFQgCJc2VjcDI1NmsxoQJwoS7tzwxqXSyFL7g0JM-KWVbgvjfB8JA__T7yY_cYboN0Y3CCJAaDdWRwgiQG"),
+	enode.MustParse("enr:-J24QHmGyBwUZXIcsGYMaUqGGSl4CFdx9Tozu-vQCn5bHIQbR7On7dZbU61vYvfrJr30t0iahSqhc64J46MnUO2JvQaGAYiOoCKKgmlkgnY0gmlwhAPnCzSHb3BzdGFja4OFQgCJc2VjcDI1NmsxoQINc4fSijfbNIiGhcgvwjsjxVFJHUstK9L1T8OTKUjgloN0Y3CCJAaDdWRwgiQG"),
+	enode.MustParse("enr:-J24QG3ypT4xSu0gjb5PABCmVxZqBjVw9ca7pvsI8jl4KATYAnxBmfkaIuEqy9sKvDHKuNCsy57WwK9wTt2aQgcaDDyGAYiOoGAXgmlkgnY0gmlwhDbGmZaHb3BzdGFja4OFQgCJc2VjcDI1NmsxoQIeAK_--tcLEiu7HvoUlbV52MspE0uCocsx1f_rYvRenIN0Y3CCJAaDdWRwgiQG"),
+	// Conduit
+	enode.MustParse("enode://9d7a3efefe442351217e73b3a593bcb8efffb55b4807699972145324eab5e6b382152f8d24f6301baebbfb5ecd4127bd3faab2842c04cd432bdf50ba092f6645@34.65.109.126:30305"),
+}
+
+var OpBNBTestnet = big.NewInt(5611)
+
+// OpBNBMainnetBootnodes are the enode URLs of the P2P bootstrap nodes running on
+// the opBNB main network.
+var OpBNBMainnetBootnodes = []string{
+	// op-node
+	"enr:-J24QIGeBCpZHdaQ5i8fyyK_uzaL1DdgOOZA3_lvjHvirjpgexMGkVeGMxlqauzEX7pWAfztCa9hpEGd_bS2a-1IqB6GAYvRDk5QgmlkgnY0gmlwhDaykUmHb3BzdGFja4PMAQCJc2VjcDI1NmsxoQJ-_5GZKjs7jaB4TILdgC8EwnwyL3Qip89wmjnyjvDDwoN0Y3CCIyuDdWRwgiMs",
+	"enr:-J24QO_AhXy6stHsVvFWnECRD_1hMccZM6JqJgiXNVIRED1JRAJvIS48Pihku2z30TfizSGUAmeb22RQfPjW99hDu9WGAYvRBDnegmlkgnY0gmlwhDbjSM6Hb3BzdGFja4PMAQCJc2VjcDI1NmsxoQKetGQX7sXd4u8hZr6uayTZgHRDvGm36YaryqZkgnidS4N0Y3CCIyuDdWRwgiMs",
+}
+
+// OpBNBTestnetBootnodes are the enode URLs of the P2P bootstrap nodes running on
+// the opBNB testnet network.
+var OpBNBTestnetBootnodes = []string{
+	// op-node
+	"enr:-J24QGQBeMsXOaCCaLWtNFSfb2Gv50DjGOKToH2HUTAIn9yXImowlRoMDNuPNhSBZNQGCCE8eAl5O3dsONuuQp5Qix2GAYjB7KHSgmlkgnY0gmlwhDREiqaHb3BzdGFja4PrKwCJc2VjcDI1NmsxoQL4I9wpEVDcUb8bLWu6V8iPoN5w8E8q-GrS5WUCygYUQ4N0Y3CCIyuDdWRwgiMr",
+	"enr:-J24QJKXHEkIhy0tmIk2EscMZ2aRrivNsZf_YhgIU51g4ZKHWY0BxW6VedRJ1jxmneW9v7JjldPOPpLkaNSo6cXGFxqGAYpK96oCgmlkgnY0gmlwhANzx96Hb3BzdGFja4PrKwCJc2VjcDI1NmsxoQMOCzUFffz04eyDrmkbaSCrMEvLvn5O4RZaZ5k1GV4wa4N0Y3CCIyuDdWRwgiMr",
 }
 
 type HostMetrics interface {
@@ -53,7 +82,8 @@ type SetupP2P interface {
 
 // ScoringParams defines the various types of peer scoring parameters.
 type ScoringParams struct {
-	PeerScoring pubsub.PeerScoreParams
+	PeerScoring        pubsub.PeerScoreParams
+	ApplicationScoring ApplicationScoreParams
 }
 
 // Config sets up a p2p host and discv5 service from configuration.
@@ -63,9 +93,6 @@ type Config struct {
 
 	DisableP2P  bool
 	NoDiscovery bool
-
-	// Enable P2P-based alt-syncing method (req-resp protocol, not gossip)
-	AltSync bool
 
 	ScoringParams *ScoringParams
 
@@ -86,6 +113,7 @@ type Config struct {
 	AdvertiseUDPPort uint16
 	Bootnodes        []*enode.Node
 	DiscoveryDB      *enode.DB
+	NetRestrict      *netutil.Netlist
 
 	StaticPeers []core.Multiaddr
 
@@ -118,6 +146,8 @@ type Config struct {
 	Store ds.Batching
 
 	EnableReqRespSync bool
+
+	EnablePingService bool
 }
 
 func DefaultConnManager(conf *Config) (connmgr.ConnManager, error) {
@@ -137,11 +167,11 @@ func (conf *Config) Disabled() bool {
 	return conf.DisableP2P
 }
 
-func (conf *Config) PeerScoringParams() *pubsub.PeerScoreParams {
+func (conf *Config) PeerScoringParams() *ScoringParams {
 	if conf.ScoringParams == nil {
 		return nil
 	}
-	return &conf.ScoringParams.PeerScoring
+	return conf.ScoringParams
 }
 
 func (conf *Config) BanPeers() bool {

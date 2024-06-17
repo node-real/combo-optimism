@@ -10,9 +10,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 
-	"github.com/ethereum-optimism/optimism/op-node/eth"
+	plasma "github.com/ethereum-optimism/optimism/op-plasma"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
 var (
@@ -35,6 +35,14 @@ var (
 	ErrL1ChainIDNotPositive          = errors.New("L1 chain ID must be non-zero and positive")
 	ErrL2ChainIDNotPositive          = errors.New("L2 chain ID must be non-zero and positive")
 )
+
+// NetworkNames are user friendly names to use in the chain spec banner.
+var NetworkNames = map[string]string{
+	"56":   "bscMainnet",
+	"204":  "opBNBMainnet",
+	"97":   "bscTestnet",
+	"5611": "opBNBTestnet",
+}
 
 type Genesis struct {
 	// The L1 block that the rollup starts *after* (no derived transactions)
@@ -75,6 +83,33 @@ type Config struct {
 	// Active if RegolithTime != nil && L2 block timestamp >= *RegolithTime, inactive otherwise.
 	RegolithTime *uint64 `json:"regolith_time,omitempty"`
 
+	// CanyonTime sets the activation time of the Canyon network upgrade.
+	// Active if CanyonTime != nil && L2 block timestamp >= *CanyonTime, inactive otherwise.
+	CanyonTime *uint64 `json:"canyon_time,omitempty"`
+
+	// DeltaTime sets the activation time of the Delta network upgrade.
+	// Active if DeltaTime != nil && L2 block timestamp >= *DeltaTime, inactive otherwise.
+	DeltaTime *uint64 `json:"delta_time,omitempty"`
+
+	// EcotoneTime sets the activation time of the Ecotone network upgrade.
+	// Active if EcotoneTime != nil && L2 block timestamp >= *EcotoneTime, inactive otherwise.
+	EcotoneTime *uint64 `json:"ecotone_time,omitempty"`
+
+	// FjordTime sets the activation time of the Fjord network upgrade.
+	// Active if FjordTime != nil && L2 block timestamp >= *FjordTime, inactive otherwise.
+	FjordTime *uint64 `json:"fjord_time,omitempty"`
+
+	// InteropTime sets the activation time for an experimental feature-set, activated like a hardfork.
+	// Active if InteropTime != nil && L2 block timestamp >= *InteropTime, inactive otherwise.
+	InteropTime *uint64 `json:"interop_time,omitempty"`
+
+	// OPBNB hard fork L2 block number
+	// Fermat switch block (nil = no fork, 0 = already on Fermat)
+	Fermat *big.Int `json:"fermat,omitempty"`
+	// SnowTime  sets the activation time of the next network upgrade.
+	// Active if SnowTime != nil && L2 block timestamp >= *SnowTime, inactive otherwise.
+	SnowTime *uint64 `json:"snow_time,omitempty"`
+
 	// Note: below addresses are part of the block-derivation process,
 	// and required to be the same network-wide to stay in consensus.
 
@@ -85,9 +120,22 @@ type Config struct {
 	// L1 System Config Address
 	L1SystemConfigAddress common.Address `json:"l1_system_config_address"`
 
-	// OPBNB hard fork
-	// Fermat switch block (nil = no fork, 0 = already on Fermat)
-	Fermat *big.Int `json:"fermat,omitempty"`
+	// L1 address that declares the protocol versions, optional (Beta feature)
+	ProtocolVersionsAddress common.Address `json:"protocol_versions_address,omitempty"`
+
+	// L1 DataAvailabilityChallenge contract proxy address
+	DAChallengeAddress common.Address `json:"da_challenge_address,omitempty"`
+
+	// DA challenge window value set on the DAC contract. Used in plasma mode
+	// to compute when a commitment can no longer be challenged.
+	DAChallengeWindow uint64 `json:"da_challenge_window"`
+
+	// DA resolve window value set on the DAC contract. Used in plasma mode
+	// to compute when a challenge expires and trigger a reorg if needed.
+	DAResolveWindow uint64 `json:"da_resolve_window"`
+
+	// UsePlasma is activated when the chain is in plasma mode.
+	UsePlasma bool `json:"use_plasma"`
 }
 
 // ValidateL1Config checks L1 config variables for errors.
@@ -106,18 +154,25 @@ func (cfg *Config) ValidateL1Config(ctx context.Context, client L1Client) error 
 }
 
 // ValidateL2Config checks L2 config variables for errors.
-func (cfg *Config) ValidateL2Config(ctx context.Context, client L2Client) error {
+func (cfg *Config) ValidateL2Config(ctx context.Context, client L2Client, skipL2GenesisBlockHash bool) error {
 	// Validate the L2 Client Chain ID
 	if err := cfg.CheckL2ChainID(ctx, client); err != nil {
 		return err
 	}
 
-	// Validate the Rollup L2 Genesis Blockhash
+	// Validate the Rollup L2 Genesis Blockhash if requested. We skip this when doing EL sync
+	if skipL2GenesisBlockHash {
+		return nil
+	}
 	if err := cfg.CheckL2GenesisBlockHash(ctx, client); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (cfg *Config) TimestampForBlock(blockNumber uint64) uint64 {
+	return cfg.Genesis.L2Time + ((blockNumber - cfg.Genesis.L2.Number) * cfg.BlockTime)
 }
 
 func (cfg *Config) TargetBlockNumber(timestamp uint64) (num uint64, err error) {
@@ -143,7 +198,7 @@ type L1Client interface {
 func (cfg *Config) CheckL1ChainID(ctx context.Context, client L1Client) error {
 	id, err := client.ChainID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get L1 chain ID: %w", err)
 	}
 	if cfg.L1ChainID.Cmp(id) != 0 {
 		return fmt.Errorf("incorrect L1 RPC chain id %d, expected %d", id, cfg.L1ChainID)
@@ -155,7 +210,7 @@ func (cfg *Config) CheckL1ChainID(ctx context.Context, client L1Client) error {
 func (cfg *Config) CheckL1GenesisBlockHash(ctx context.Context, client L1Client) error {
 	l1GenesisBlockRef, err := client.L1BlockRefByNumber(ctx, cfg.Genesis.L1.Number)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get L1 genesis blockhash: %w", err)
 	}
 	if l1GenesisBlockRef.Hash != cfg.Genesis.L1.Hash {
 		return fmt.Errorf("incorrect L1 genesis block hash %s, expected %s", l1GenesisBlockRef.Hash, cfg.Genesis.L1.Hash)
@@ -172,7 +227,7 @@ type L2Client interface {
 func (cfg *Config) CheckL2ChainID(ctx context.Context, client L2Client) error {
 	id, err := client.ChainID(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get L2 chain ID: %w", err)
 	}
 	if cfg.L2ChainID.Cmp(id) != 0 {
 		return fmt.Errorf("incorrect L2 RPC chain id %d, expected %d", id, cfg.L2ChainID)
@@ -184,7 +239,7 @@ func (cfg *Config) CheckL2ChainID(ctx context.Context, client L2Client) error {
 func (cfg *Config) CheckL2GenesisBlockHash(ctx context.Context, client L2Client) error {
 	l2GenesisBlockRef, err := client.L2BlockRefByNumber(ctx, cfg.Genesis.L2.Number)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get L2 genesis blockhash: %w", err)
 	}
 	if l2GenesisBlockRef.Hash != cfg.Genesis.L2.Hash {
 		return fmt.Errorf("incorrect L2 genesis block hash %s, expected %s", l2GenesisBlockRef.Hash, cfg.Genesis.L2.Hash)
@@ -248,11 +303,42 @@ func (cfg *Config) Check() error {
 	if cfg.L2ChainID.Sign() < 1 {
 		return ErrL2ChainIDNotPositive
 	}
+
+	if err := checkFork(cfg.RegolithTime, cfg.CanyonTime, "regolith", "canyon"); err != nil {
+		return err
+	}
+	if err := checkFork(cfg.CanyonTime, cfg.DeltaTime, "canyon", "delta"); err != nil {
+		return err
+	}
+	if err := checkFork(cfg.DeltaTime, cfg.EcotoneTime, "delta", "ecotone"); err != nil {
+		return err
+	}
+	if err := checkFork(cfg.EcotoneTime, cfg.FjordTime, "ecotone", "fjord"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// checkFork checks that fork A is before or at the same time as fork B
+func checkFork(a, b *uint64, aName, bName string) error {
+	if a == nil && b == nil {
+		return nil
+	}
+	if a == nil && b != nil {
+		return fmt.Errorf("fork %s set (to %d), but prior fork %s missing", bName, *b, aName)
+	}
+	if a != nil && b == nil {
+		return nil
+	}
+	if *a > *b {
+		return fmt.Errorf("fork %s set to %d, but prior fork %s has higher offset %d", bName, *b, aName, *a)
+	}
 	return nil
 }
 
 func (c *Config) L1Signer() types.Signer {
-	return types.NewLondonSigner(c.L1ChainID)
+	return types.NewCancunSigner(c.L1ChainID)
 }
 
 // IsRegolith returns true if the Regolith hardfork is active at or past the given timestamp.
@@ -260,9 +346,116 @@ func (c *Config) IsRegolith(timestamp uint64) bool {
 	return c.RegolithTime != nil && timestamp >= *c.RegolithTime
 }
 
+// IsCanyon returns true if the Canyon hardfork is active at or past the given timestamp.
+func (c *Config) IsCanyon(timestamp uint64) bool {
+	return c.CanyonTime != nil && timestamp >= *c.CanyonTime
+}
+
+// IsDelta returns true if the Delta hardfork is active at or past the given timestamp.
+func (c *Config) IsDelta(timestamp uint64) bool {
+	return c.DeltaTime != nil && timestamp >= *c.DeltaTime
+}
+
+// IsEcotone returns true if the Ecotone hardfork is active at or past the given timestamp.
+func (c *Config) IsEcotone(timestamp uint64) bool {
+	return c.EcotoneTime != nil && timestamp >= *c.EcotoneTime
+}
+
+// IsEcotoneActivationBlock returns whether the specified block is the first block subject to the
+// Ecotone upgrade. Ecotone activation at genesis does not count.
+func (c *Config) IsEcotoneActivationBlock(l2BlockTime uint64) bool {
+	return c.IsEcotone(l2BlockTime) &&
+		l2BlockTime >= c.BlockTime &&
+		!c.IsEcotone(l2BlockTime-c.BlockTime)
+}
+
+// IsFjord returns true if the Fjord hardfork is active at or past the given timestamp.
+func (c *Config) IsFjord(timestamp uint64) bool {
+	return c.FjordTime != nil && timestamp >= *c.FjordTime
+}
+
+// IsInterop returns true if the Interop hardfork is active at or past the given timestamp.
+func (c *Config) IsInterop(timestamp uint64) bool {
+	return c.InteropTime != nil && timestamp >= *c.InteropTime
+}
+
+// ForkchoiceUpdatedVersion returns the EngineAPIMethod suitable for the chain hard fork version.
+func (c *Config) ForkchoiceUpdatedVersion(attr *eth.PayloadAttributes) eth.EngineAPIMethod {
+	if attr == nil {
+		// Don't begin payload build process.
+		return eth.FCUV3
+	}
+	ts := uint64(attr.Timestamp)
+	if c.IsEcotone(ts) {
+		// Cancun
+		return eth.FCUV3
+	} else if c.IsCanyon(ts) {
+		// Shanghai
+		return eth.FCUV2
+	} else {
+		// According to Ethereum engine API spec, we can use fcuV2 here,
+		// but upstream Geth v1.13.11 does not accept V2 before Shanghai.
+		return eth.FCUV1
+	}
+}
+
+// NewPayloadVersion returns the EngineAPIMethod suitable for the chain hard fork version.
+func (c *Config) NewPayloadVersion(timestamp uint64) eth.EngineAPIMethod {
+	if c.IsEcotone(timestamp) {
+		// Cancun
+		return eth.NewPayloadV3
+	} else {
+		return eth.NewPayloadV2
+	}
+}
+
+// GetPayloadVersion returns the EngineAPIMethod suitable for the chain hard fork version.
+func (c *Config) GetPayloadVersion(timestamp uint64) eth.EngineAPIMethod {
+	if c.IsEcotone(timestamp) {
+		// Cancun
+		return eth.GetPayloadV3
+	} else {
+		return eth.GetPayloadV2
+	}
+}
+
+// PlasmaConfig validates and returns the plasma config from the rollup config.
+func (c *Config) PlasmaConfig() (plasma.Config, error) {
+	if c.DAChallengeAddress == (common.Address{}) {
+		return plasma.Config{}, fmt.Errorf("missing DAChallengeAddress")
+	}
+	if c.DAChallengeWindow == uint64(0) {
+		return plasma.Config{}, fmt.Errorf("missing DAChallengeWindow")
+	}
+	if c.DAResolveWindow == uint64(0) {
+		return plasma.Config{}, fmt.Errorf("missing DAResolveWindow")
+	}
+	return plasma.Config{
+		DAChallengeContractAddress: c.DAChallengeAddress,
+		ChallengeWindow:            c.DAChallengeWindow,
+		ResolveWindow:              c.DAResolveWindow,
+	}, nil
+}
+
+// SyncLookback computes the number of blocks to walk back in order to find the correct L1 origin.
+// In plasma mode longest possible window is challenge + resolve windows.
+func (c *Config) SyncLookback() uint64 {
+	if c.UsePlasma {
+		if win := (c.DAChallengeWindow + c.DAResolveWindow); win > c.SeqWindowSize {
+			return win
+		}
+	}
+	return c.SeqWindowSize
+}
+
 // IsFermat returns true if the Fermat hardfork is active at or past the given block.
 func (c *Config) IsFermat(num *big.Int) bool {
 	return isBlockForked(c.Fermat, num)
+}
+
+// IsSnow returns whether the time is either equal to the Snow fork time or greater.
+func (c *Config) IsSnow(time uint64) bool {
+	return isTimestampForked(c.SnowTime, time)
 }
 
 // isBlockForked returns whether a fork scheduled at block s is active at the
@@ -275,20 +468,32 @@ func isBlockForked(s, head *big.Int) bool {
 	return s.Cmp(head) <= 0
 }
 
+// isTimestampForked returns whether a fork scheduled at timestamp s is active
+// at the given head timestamp. Whilst this method is the same as isBlockForked,
+// they are explicitly separate for clearer reading.
+func isTimestampForked(s *uint64, head uint64) bool {
+	if s == nil {
+		return false
+	}
+	return *s <= head
+}
+
 // Description outputs a banner describing the important parts of rollup configuration in a human-readable form.
 // Optionally provide a mapping of L2 chain IDs to network names to label the L2 chain with if not unknown.
 // The config should be config.Check()-ed before creating a description.
 func (c *Config) Description(l2Chains map[string]string) string {
 	// Find and report the network the user is running
 	var banner string
-	networkL2 := ""
+	// replace using opBNB networks
+	networkL2 := NetworkNames[c.L2ChainID.String()]
 	if l2Chains != nil {
 		networkL2 = l2Chains[c.L2ChainID.String()]
 	}
 	if networkL2 == "" {
 		networkL2 = "unknown L2"
 	}
-	networkL1 := params.NetworkNames[c.L1ChainID.String()]
+	// replace using bsc networks
+	networkL1 := NetworkNames[c.L1ChainID.String()]
 	if networkL1 == "" {
 		networkL1 = "unknown L1"
 	}
@@ -302,31 +507,51 @@ func (c *Config) Description(l2Chains map[string]string) string {
 	// Report the upgrade configuration
 	banner += "Post-Bedrock Network Upgrades (timestamp based):\n"
 	banner += fmt.Sprintf("  - Regolith: %s\n", fmtForkTimeOrUnset(c.RegolithTime))
+	banner += fmt.Sprintf("  - Canyon: %s\n", fmtForkTimeOrUnset(c.CanyonTime))
+	banner += fmt.Sprintf("  - Delta: %s\n", fmtForkTimeOrUnset(c.DeltaTime))
+	banner += fmt.Sprintf("  - Ecotone: %s\n", fmtForkTimeOrUnset(c.EcotoneTime))
+	banner += fmt.Sprintf("  - Fjord: %s\n", fmtForkTimeOrUnset(c.FjordTime))
+	banner += fmt.Sprintf("  - Interop: %s\n", fmtForkTimeOrUnset(c.InteropTime))
+
 	banner += "OPBNB hard forks (block based):\n"
 	banner += fmt.Sprintf(" - Fermat:              #%-8v\n", c.Fermat)
+	banner += "OPBNB hard forks (timestamp based):\n"
+	banner += fmt.Sprintf(" - Snow: %s\n", fmtForkTimeOrUnset(c.SnowTime))
+	// Report the protocol version
+	banner += fmt.Sprintf("Node supports up to OP-Stack Protocol Version: %s\n", OPStackSupport)
 	return banner
 }
 
-// Description outputs a banner describing the important parts of rollup configuration in a log format.
+// LogDescription outputs a banner describing the important parts of rollup configuration in a log format.
 // Optionally provide a mapping of L2 chain IDs to network names to label the L2 chain with if not unknown.
 // The config should be config.Check()-ed before creating a description.
 func (c *Config) LogDescription(log log.Logger, l2Chains map[string]string) {
 	// Find and report the network the user is running
-	networkL2 := ""
+	// replace using opBNB networks
+	networkL2 := NetworkNames[c.L2ChainID.String()]
 	if l2Chains != nil {
 		networkL2 = l2Chains[c.L2ChainID.String()]
 	}
 	if networkL2 == "" {
 		networkL2 = "unknown L2"
 	}
-	networkL1 := params.NetworkNames[c.L1ChainID.String()]
+	// replace using bsc networks
+	networkL1 := NetworkNames[c.L1ChainID.String()]
 	if networkL1 == "" {
 		networkL1 = "unknown L1"
 	}
 	log.Info("Rollup Config", "l2_chain_id", c.L2ChainID, "l2_network", networkL2, "l1_chain_id", c.L1ChainID,
 		"l1_network", networkL1, "l2_start_time", c.Genesis.L2Time, "l2_block_hash", c.Genesis.L2.Hash.String(),
 		"l2_block_number", c.Genesis.L2.Number, "l1_block_hash", c.Genesis.L1.Hash.String(),
-		"l1_block_number", c.Genesis.L1.Number, "regolith_time", fmtForkTimeOrUnset(c.RegolithTime), "Fermat", c.Fermat)
+		"l1_block_number", c.Genesis.L1.Number, "regolith_time", fmtForkTimeOrUnset(c.RegolithTime),
+		"canyon_time", fmtForkTimeOrUnset(c.CanyonTime),
+		"delta_time", fmtForkTimeOrUnset(c.DeltaTime),
+		"ecotone_time", fmtForkTimeOrUnset(c.EcotoneTime),
+		"fjord_time", fmtForkTimeOrUnset(c.FjordTime),
+		"interop_time", fmtForkTimeOrUnset(c.InteropTime),
+		"fermat", c.Fermat,
+		"snow_time", fmtForkTimeOrUnset(c.SnowTime),
+	)
 }
 
 func fmtForkTimeOrUnset(v *uint64) string {

@@ -14,7 +14,7 @@ import (
 	p2pMocks "github.com/ethereum-optimism/optimism/op-node/p2p/mocks"
 	"github.com/ethereum-optimism/optimism/op-node/p2p/store"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
-	"github.com/ethereum-optimism/optimism/op-node/testlog"
+	"github.com/ethereum-optimism/optimism/op-service/testlog"
 )
 
 // PeerScorerTestSuite tests peer parameterization.
@@ -30,34 +30,12 @@ type PeerScorerTestSuite struct {
 func (testSuite *PeerScorerTestSuite) SetupTest() {
 	testSuite.mockStore = &p2pMocks.Peerstore{}
 	testSuite.mockMetricer = &p2pMocks.ScoreMetrics{}
-	testSuite.logger = testlog.Logger(testSuite.T(), log.LvlError)
+	testSuite.logger = testlog.Logger(testSuite.T(), log.LevelError)
 }
 
 // TestPeerScorer runs the PeerScorerTestSuite.
 func TestPeerScorer(t *testing.T) {
 	suite.Run(t, new(PeerScorerTestSuite))
-}
-
-// TestScorer_OnConnect ensures we can call the OnConnect method on the peer scorer.
-func (testSuite *PeerScorerTestSuite) TestScorer_OnConnect() {
-	scorer := p2p.NewScorer(
-		&rollup.Config{L2ChainID: big.NewInt(123)},
-		testSuite.mockStore,
-		testSuite.mockMetricer,
-		testSuite.logger,
-	)
-	scorer.OnConnect(peer.ID("alice"))
-}
-
-// TestScorer_OnDisconnect ensures we can call the OnDisconnect method on the peer scorer.
-func (testSuite *PeerScorerTestSuite) TestScorer_OnDisconnect() {
-	scorer := p2p.NewScorer(
-		&rollup.Config{L2ChainID: big.NewInt(123)},
-		testSuite.mockStore,
-		testSuite.mockMetricer,
-		testSuite.logger,
-	)
-	scorer.OnDisconnect(peer.ID("alice"))
 }
 
 // TestScorer_SnapshotHook tests running the snapshot hook on the peer scorer.
@@ -66,6 +44,7 @@ func (testSuite *PeerScorerTestSuite) TestScorer_SnapshotHook() {
 		&rollup.Config{L2ChainID: big.NewInt(123)},
 		testSuite.mockStore,
 		testSuite.mockMetricer,
+		&p2p.NoopApplicationScorer{},
 		testSuite.logger,
 	)
 	inspectFn := scorer.SnapshotHook()

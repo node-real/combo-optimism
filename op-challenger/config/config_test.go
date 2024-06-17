@@ -1,127 +1,227 @@
 package config
 
 import (
+	"fmt"
+	"runtime"
 	"testing"
-	"time"
-
-	oplog "github.com/ethereum-optimism/optimism/op-service/log"
-	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
-	oppprof "github.com/ethereum-optimism/optimism/op-service/pprof"
-	oprpc "github.com/ethereum-optimism/optimism/op-service/rpc"
-	txmgr "github.com/ethereum-optimism/optimism/op-service/txmgr"
-	client "github.com/ethereum-optimism/optimism/op-signer/client"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum-optimism/optimism/op-service/txmgr"
 )
 
 var (
-	validL1EthRpc       = "http://localhost:8545"
-	validRollupRpc      = "http://localhost:8546"
-	validL2OOAddress    = common.HexToAddress("0x7bdd3b028C4796eF0EAf07d11394d0d9d8c24139")
-	validDGFAddress     = common.HexToAddress("0x7bdd3b028C4796eF0EAf07d11394d0d9d8c24139")
-	validNetworkTimeout = time.Duration(5) * time.Second
+	validL1EthRpc              = "http://localhost:8545"
+	validL1BeaconUrl           = "http://localhost:9000"
+	validGameFactoryAddress    = common.Address{0x23}
+	validCannonBin             = "./bin/cannon"
+	validCannonOpProgramBin    = "./bin/op-program"
+	validCannonNetwork         = "mainnet"
+	validCannonAbsolutPreState = "pre.json"
+	validDatadir               = "/tmp/data"
+	validCannonL2              = "http://localhost:9545"
+	validRollupRpc             = "http://localhost:8555"
 )
 
-var validTxMgrConfig = txmgr.CLIConfig{
-	L1RPCURL:                  validL1EthRpc,
-	NumConfirmations:          10,
-	NetworkTimeout:            validNetworkTimeout,
-	ResubmissionTimeout:       time.Duration(5) * time.Second,
-	ReceiptQueryInterval:      time.Duration(5) * time.Second,
-	TxNotInMempoolTimeout:     time.Duration(5) * time.Second,
-	SafeAbortNonceTooLowCount: 10,
-	SignerCLIConfig: client.CLIConfig{
-		Endpoint: "http://localhost:8547",
-		// First address for the default hardhat mnemonic
-		Address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
-	},
-}
+var cannonTraceTypes = []TraceType{TraceTypeCannon, TraceTypePermissioned}
 
-var validRPCConfig = oprpc.CLIConfig{
-	ListenAddr: "localhost:8547",
-	ListenPort: 8547,
-}
-
-var validLogConfig = oplog.DefaultCLIConfig()
-
-var validMetricsConfig = opmetrics.CLIConfig{
-	Enabled: false,
-}
-
-var validPprofConfig = oppprof.CLIConfig{
-	Enabled: false,
-}
-
-func validConfig() *Config {
-	cfg := NewConfig(
-		validL1EthRpc,
-		validRollupRpc,
-		validL2OOAddress,
-		validDGFAddress,
-		validNetworkTimeout,
-		&validTxMgrConfig,
-		&validRPCConfig,
-		&validLogConfig,
-		&validMetricsConfig,
-		&validPprofConfig,
-	)
+func validConfig(traceType TraceType) Config {
+	cfg := NewConfig(validGameFactoryAddress, validL1EthRpc, validL1BeaconUrl, validDatadir, traceType)
+	if traceType == TraceTypeCannon || traceType == TraceTypePermissioned {
+		cfg.CannonBin = validCannonBin
+		cfg.CannonServer = validCannonOpProgramBin
+		cfg.CannonAbsolutePreState = validCannonAbsolutPreState
+		cfg.CannonL2 = validCannonL2
+		cfg.CannonNetwork = validCannonNetwork
+	}
+	cfg.RollupRpc = validRollupRpc
 	return cfg
 }
 
 // TestValidConfigIsValid checks that the config provided by validConfig is actually valid
 func TestValidConfigIsValid(t *testing.T) {
-	err := validConfig().Check()
-	require.NoError(t, err)
+	for _, traceType := range TraceTypes {
+		traceType := traceType
+		t.Run(traceType.String(), func(t *testing.T) {
+			err := validConfig(traceType).Check()
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestTxMgrConfig(t *testing.T) {
-	t.Run("Required", func(t *testing.T) {
-		config := validConfig()
-		config.TxMgrConfig = nil
-		err := config.Check()
-		require.ErrorIs(t, err, ErrMissingTxMgrConfig)
-	})
-
 	t.Run("Invalid", func(t *testing.T) {
-		config := validConfig()
-		config.TxMgrConfig = &txmgr.CLIConfig{}
-		err := config.Check()
-		require.Equal(t, err.Error(), "must provide a L1 RPC url")
+		config := validConfig(TraceTypeCannon)
+		config.TxMgrConfig = txmgr.CLIConfig{}
+		require.Equal(t, config.Check().Error(), "must provide a L1 RPC url")
 	})
 }
 
 func TestL1EthRpcRequired(t *testing.T) {
-	config := validConfig()
+	config := validConfig(TraceTypeCannon)
 	config.L1EthRpc = ""
-	err := config.Check()
-	require.ErrorIs(t, err, ErrMissingL1EthRPC)
+	require.ErrorIs(t, config.Check(), ErrMissingL1EthRPC)
+}
+
+func TestL1BeaconRequired(t *testing.T) {
+	config := validConfig(TraceTypeCannon)
+	config.L1Beacon = ""
+	require.ErrorIs(t, config.Check(), ErrMissingL1Beacon)
+}
+
+func TestGameFactoryAddressRequired(t *testing.T) {
+	config := validConfig(TraceTypeCannon)
+	config.GameFactoryAddress = common.Address{}
+	require.ErrorIs(t, config.Check(), ErrMissingGameFactoryAddress)
+}
+
+func TestSelectiveClaimResolutionNotRequired(t *testing.T) {
+	config := validConfig(TraceTypeCannon)
+	require.Equal(t, false, config.SelectiveClaimResolution)
+	require.NoError(t, config.Check())
+}
+
+func TestGameAllowlistNotRequired(t *testing.T) {
+	config := validConfig(TraceTypeCannon)
+	config.GameAllowlist = []common.Address{}
+	require.NoError(t, config.Check())
+}
+
+func TestCannonRequiredArgs(t *testing.T) {
+	for _, traceType := range cannonTraceTypes {
+		traceType := traceType
+
+		t.Run(fmt.Sprintf("TestCannonBinRequired-%v", traceType), func(t *testing.T) {
+			config := validConfig(traceType)
+			config.CannonBin = ""
+			require.ErrorIs(t, config.Check(), ErrMissingCannonBin)
+		})
+
+		t.Run(fmt.Sprintf("TestCannonServerRequired-%v", traceType), func(t *testing.T) {
+			config := validConfig(traceType)
+			config.CannonServer = ""
+			require.ErrorIs(t, config.Check(), ErrMissingCannonServer)
+		})
+
+		t.Run(fmt.Sprintf("TestCannonAbsolutePreStateRequired-%v", traceType), func(t *testing.T) {
+			config := validConfig(traceType)
+			config.CannonAbsolutePreState = ""
+			require.ErrorIs(t, config.Check(), ErrMissingCannonAbsolutePreState)
+		})
+
+		t.Run(fmt.Sprintf("TestCannonL2Required-%v", traceType), func(t *testing.T) {
+			config := validConfig(traceType)
+			config.CannonL2 = ""
+			require.ErrorIs(t, config.Check(), ErrMissingCannonL2)
+		})
+
+		t.Run(fmt.Sprintf("TestCannonSnapshotFreq-%v", traceType), func(t *testing.T) {
+			t.Run("MustNotBeZero", func(t *testing.T) {
+				cfg := validConfig(traceType)
+				cfg.CannonSnapshotFreq = 0
+				require.ErrorIs(t, cfg.Check(), ErrMissingCannonSnapshotFreq)
+			})
+		})
+
+		t.Run(fmt.Sprintf("TestCannonInfoFreq-%v", traceType), func(t *testing.T) {
+			t.Run("MustNotBeZero", func(t *testing.T) {
+				cfg := validConfig(traceType)
+				cfg.CannonInfoFreq = 0
+				require.ErrorIs(t, cfg.Check(), ErrMissingCannonInfoFreq)
+			})
+		})
+
+		t.Run(fmt.Sprintf("TestCannonNetworkOrRollupConfigRequired-%v", traceType), func(t *testing.T) {
+			cfg := validConfig(traceType)
+			cfg.CannonNetwork = ""
+			cfg.CannonRollupConfigPath = ""
+			cfg.CannonL2GenesisPath = "genesis.json"
+			require.ErrorIs(t, cfg.Check(), ErrMissingCannonRollupConfig)
+		})
+
+		t.Run(fmt.Sprintf("TestCannonNetworkOrL2GenesisRequired-%v", traceType), func(t *testing.T) {
+			cfg := validConfig(traceType)
+			cfg.CannonNetwork = ""
+			cfg.CannonRollupConfigPath = "foo.json"
+			cfg.CannonL2GenesisPath = ""
+			require.ErrorIs(t, cfg.Check(), ErrMissingCannonL2Genesis)
+		})
+
+		t.Run(fmt.Sprintf("TestMustNotSpecifyNetworkAndRollup-%v", traceType), func(t *testing.T) {
+			cfg := validConfig(traceType)
+			cfg.CannonNetwork = validCannonNetwork
+			cfg.CannonRollupConfigPath = "foo.json"
+			cfg.CannonL2GenesisPath = ""
+			require.ErrorIs(t, cfg.Check(), ErrCannonNetworkAndRollupConfig)
+		})
+
+		t.Run(fmt.Sprintf("TestMustNotSpecifyNetworkAndL2Genesis-%v", traceType), func(t *testing.T) {
+			cfg := validConfig(traceType)
+			cfg.CannonNetwork = validCannonNetwork
+			cfg.CannonRollupConfigPath = ""
+			cfg.CannonL2GenesisPath = "foo.json"
+			require.ErrorIs(t, cfg.Check(), ErrCannonNetworkAndL2Genesis)
+		})
+
+		t.Run(fmt.Sprintf("TestNetworkMustBeValid-%v", traceType), func(t *testing.T) {
+			cfg := validConfig(traceType)
+			cfg.CannonNetwork = "unknown"
+			require.ErrorIs(t, cfg.Check(), ErrCannonNetworkUnknown)
+		})
+	}
+}
+
+func TestDatadirRequired(t *testing.T) {
+	config := validConfig(TraceTypeAlphabet)
+	config.Datadir = ""
+	require.ErrorIs(t, config.Check(), ErrMissingDatadir)
+}
+
+func TestMaxConcurrency(t *testing.T) {
+	t.Run("Required", func(t *testing.T) {
+		config := validConfig(TraceTypeAlphabet)
+		config.MaxConcurrency = 0
+		require.ErrorIs(t, config.Check(), ErrMaxConcurrencyZero)
+	})
+
+	t.Run("DefaultToNumberOfCPUs", func(t *testing.T) {
+		config := validConfig(TraceTypeAlphabet)
+		require.EqualValues(t, runtime.NumCPU(), config.MaxConcurrency)
+	})
+}
+
+func TestHttpPollInterval(t *testing.T) {
+	t.Run("Default", func(t *testing.T) {
+		config := validConfig(TraceTypeAlphabet)
+		require.EqualValues(t, DefaultPollInterval, config.PollInterval)
+	})
 }
 
 func TestRollupRpcRequired(t *testing.T) {
-	config := validConfig()
-	config.RollupRpc = ""
-	err := config.Check()
-	require.ErrorIs(t, err, ErrMissingRollupRpc)
+	for _, traceType := range TraceTypes {
+		traceType := traceType
+		t.Run(traceType.String(), func(t *testing.T) {
+			config := validConfig(traceType)
+			config.RollupRpc = ""
+			require.ErrorIs(t, config.Check(), ErrMissingRollupRpc)
+		})
+	}
 }
 
-func TestL2OOAddressRequired(t *testing.T) {
-	config := validConfig()
-	config.L2OOAddress = common.Address{}
-	err := config.Check()
-	require.ErrorIs(t, err, ErrMissingL2OOAddress)
-}
+func TestRequireConfigForMultipleTraceTypes(t *testing.T) {
+	cfg := validConfig(TraceTypeCannon)
+	cfg.TraceTypes = []TraceType{TraceTypeCannon, TraceTypeAlphabet}
+	// Set all required options and check its valid
+	cfg.RollupRpc = validRollupRpc
+	require.NoError(t, cfg.Check())
 
-func TestDGFAddressRequired(t *testing.T) {
-	config := validConfig()
-	config.DGFAddress = common.Address{}
-	err := config.Check()
-	require.ErrorIs(t, err, ErrMissingDGFAddress)
-}
+	// Require cannon specific args
+	cfg.CannonL2 = ""
+	require.ErrorIs(t, cfg.Check(), ErrMissingCannonL2)
+	cfg.CannonL2 = validCannonL2
 
-func TestNetworkTimeoutRequired(t *testing.T) {
-	config := validConfig()
-	config.NetworkTimeout = 0
-	err := config.Check()
-	require.ErrorIs(t, err, ErrInvalidNetworkTimeout)
+	// Require output cannon specific args
+	cfg.RollupRpc = ""
+	require.ErrorIs(t, cfg.Check(), ErrMissingRollupRpc)
 }

@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
-	"github.com/ethereum-optimism/optimism/op-node/client"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
-	"github.com/ethereum-optimism/optimism/op-node/sources"
-	service_client "github.com/ethereum-optimism/optimism/op-service/client"
+	"github.com/ethereum-optimism/optimism/op-service/client"
+	"github.com/ethereum-optimism/optimism/op-service/sources"
 
 	"github.com/ethereum/go-ethereum/log"
 	gn "github.com/ethereum/go-ethereum/node"
@@ -22,13 +23,6 @@ type L2EndpointSetup interface {
 	Check() error
 }
 
-type L2SyncEndpointSetup interface {
-	// Setup a RPC client to another L2 node to sync L2 blocks from.
-	// It may return a nil client with nil error if RPC based sync is not enabled.
-	Setup(ctx context.Context, log log.Logger, rollupCfg *rollup.Config) (cl client.RPC, rpcCfg *sources.SyncClientConfig, err error)
-	Check() error
-}
-
 type L1EndpointSetup interface {
 	// Setup a RPC client to a L1 node to pull rollup input-data from.
 	// The results of the RPC client may be trusted for faster processing, or strictly validated.
@@ -37,8 +31,23 @@ type L1EndpointSetup interface {
 	Check() error
 }
 
+type L1BeaconEndpointSetup interface {
+	Setup(ctx context.Context, log log.Logger) (cl sources.BeaconClient, fb []sources.BlobSideCarsFetcher, err error)
+	// ShouldIgnoreBeaconCheck returns true if the Beacon-node version check should not halt startup.
+	ShouldIgnoreBeaconCheck() bool
+	ShouldFetchAllSidecars() bool
+	Check() error
+}
+
+type L1BlobEndpointSetup interface {
+	Setup(ctx context.Context, log log.Logger) ([]client.RPC, error)
+	Check() error
+}
+
 type L2EndpointConfig struct {
-	L2EngineAddr string // Address of L2 Engine JSON-RPC endpoint to use (engine and eth namespace required)
+	// L2EngineAddr is the address of the L2 Engine JSON-RPC endpoint to use. The engine and eth
+	// namespaces must be enabled by the endpoint.
+	L2EngineAddr string
 
 	// JWT secrets for L2 Engine API authentication during HTTP or initial Websocket communication.
 	// Any value for an IPC connection.
@@ -60,7 +69,11 @@ func (cfg *L2EndpointConfig) Setup(ctx context.Context, log log.Logger, rollupCf
 		return nil, nil, err
 	}
 	auth := rpc.WithHTTPAuth(gn.NewJWTAuth(cfg.L2EngineJWTSecret))
-	l2Node, err := client.NewRPC(ctx, log, cfg.L2EngineAddr, client.WithGethRPCOptions(auth))
+	opts := []client.RPCOption{
+		client.WithGethRPCOptions(auth),
+		client.WithDialBackoff(10),
+	}
+	l2Node, err := client.NewRPC(ctx, log, cfg.L2EngineAddr, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -86,50 +99,6 @@ func (p *PreparedL2Endpoints) Setup(ctx context.Context, log log.Logger, rollupC
 	return p.Client, sources.EngineClientDefaultConfig(rollupCfg), nil
 }
 
-// L2SyncEndpointConfig contains configuration for the fallback sync endpoint
-type L2SyncEndpointConfig struct {
-	// Address of the L2 RPC to use for backup sync, may be empty if RPC alt-sync is disabled.
-	L2NodeAddr string
-	TrustRPC   bool
-}
-
-var _ L2SyncEndpointSetup = (*L2SyncEndpointConfig)(nil)
-
-// Setup creates an RPC client to sync from.
-// It will return nil without error if no sync method is configured.
-func (cfg *L2SyncEndpointConfig) Setup(ctx context.Context, log log.Logger, rollupCfg *rollup.Config) (client.RPC, *sources.SyncClientConfig, error) {
-	if cfg.L2NodeAddr == "" {
-		return nil, nil, nil
-	}
-	l2Node, err := client.NewRPC(ctx, log, cfg.L2NodeAddr)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return l2Node, sources.SyncClientDefaultConfig(rollupCfg, cfg.TrustRPC), nil
-}
-
-func (cfg *L2SyncEndpointConfig) Check() error {
-	// empty addr is valid, as it is optional.
-	return nil
-}
-
-type PreparedL2SyncEndpoint struct {
-	// RPC endpoint to use for syncing, may be nil if RPC alt-sync is disabled.
-	Client   client.RPC
-	TrustRPC bool
-}
-
-var _ L2SyncEndpointSetup = (*PreparedL2SyncEndpoint)(nil)
-
-func (cfg *PreparedL2SyncEndpoint) Setup(ctx context.Context, log log.Logger, rollupCfg *rollup.Config) (client.RPC, *sources.SyncClientConfig, error) {
-	return cfg.Client, sources.SyncClientDefaultConfig(rollupCfg, cfg.TrustRPC), nil
-}
-
-func (cfg *PreparedL2SyncEndpoint) Check() error {
-	return nil
-}
-
 type L1EndpointConfig struct {
 	L1NodeAddr string // Address of L1 User JSON-RPC endpoint to use (eth namespace required)
 
@@ -148,6 +117,9 @@ type L1EndpointConfig struct {
 	// BatchSize specifies the maximum batch-size, which also applies as L1 rate-limit burst amount (if set).
 	BatchSize int
 
+	// MaxConcurrency specifies the maximum number of concurrent requests to the L1 RPC.
+	MaxConcurrency int
+
 	// HttpPollInterval specifies the interval between polling for the latest L1 block,
 	// when the RPC is detected to be an HTTP type.
 	// It is recommended to use websockets or IPC for efficient following of the changing block.
@@ -164,6 +136,9 @@ func (cfg *L1EndpointConfig) Check() error {
 	if cfg.RateLimit < 0 {
 		return fmt.Errorf("rate limit cannot be negative")
 	}
+	if cfg.MaxConcurrency < 1 {
+		return fmt.Errorf("max concurrent requests cannot be less than 1, was %d", cfg.MaxConcurrency)
+	}
 	return nil
 }
 
@@ -176,7 +151,7 @@ func (cfg *L1EndpointConfig) Setup(ctx context.Context, log log.Logger, rollupCf
 		opts = append(opts, client.WithRateLimit(cfg.RateLimit, cfg.BatchSize))
 	}
 
-	isMultiUrl, urlList := service_client.MultiUrlParse(cfg.L1NodeAddr)
+	isMultiUrl, urlList := client.MultiUrlParse(cfg.L1NodeAddr)
 	if isMultiUrl {
 		return fallbackClientWrap(ctx, log, urlList, cfg, rollupCfg, opts...)
 	}
@@ -187,6 +162,7 @@ func (cfg *L1EndpointConfig) Setup(ctx context.Context, log log.Logger, rollupCf
 	}
 	rpcCfg := sources.L1ClientDefaultConfig(rollupCfg, cfg.L1TrustRPC, cfg.L1RPCKind)
 	rpcCfg.MaxRequestsPerBatch = cfg.BatchSize
+	rpcCfg.MaxConcurrentRequests = cfg.MaxConcurrency
 	return l1Node, rpcCfg, nil
 }
 
@@ -200,6 +176,7 @@ func fallbackClientWrap(ctx context.Context, logger log.Logger, urlList []string
 	})
 	rpcCfg := sources.L1ClientDefaultConfig(rollupCfg, cfg.L1TrustRPC, cfg.L1RPCKind)
 	rpcCfg.MaxRequestsPerBatch = cfg.BatchSize
+	rpcCfg.MaxConcurrentRequests = cfg.MaxConcurrency
 	return l1Node, rpcCfg, nil
 }
 
@@ -222,4 +199,113 @@ func (cfg *PreparedL1Endpoint) Check() error {
 	}
 
 	return nil
+}
+
+type L1BeaconEndpointConfig struct {
+	BeaconAddr             string // Address of L1 User Beacon-API endpoint to use (beacon namespace required)
+	BeaconHeader           string // Optional HTTP header for all requests to L1 Beacon
+	BeaconArchiverAddr     string // Address of L1 User Beacon-API Archive endpoint to use for expired blobs (beacon namespace required)
+	BeaconCheckIgnore      bool   // When false, halt startup if the beacon version endpoint fails
+	BeaconFetchAllSidecars bool   // Whether to fetch all blob sidecars and filter locally
+}
+
+var _ L1BeaconEndpointSetup = (*L1BeaconEndpointConfig)(nil)
+
+func (cfg *L1BeaconEndpointConfig) Setup(ctx context.Context, log log.Logger) (cl sources.BeaconClient, fb []sources.BlobSideCarsFetcher, err error) {
+	var opts []client.BasicHTTPClientOption
+	if cfg.BeaconHeader != "" {
+		hdr, err := parseHTTPHeader(cfg.BeaconHeader)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parsing beacon header: %w", err)
+		}
+		opts = append(opts, client.WithHeader(hdr))
+	}
+
+	a := client.NewBasicHTTPClient(cfg.BeaconAddr, log, opts...)
+	if cfg.BeaconArchiverAddr != "" {
+		b := client.NewBasicHTTPClient(cfg.BeaconArchiverAddr, log)
+		fb = append(fb, sources.NewBeaconHTTPClient(b))
+	}
+	return sources.NewBeaconHTTPClient(a), fb, nil
+}
+
+func (cfg *L1BeaconEndpointConfig) Check() error {
+	if cfg.BeaconAddr == "" && !cfg.BeaconCheckIgnore {
+		return errors.New("expected L1 Beacon API endpoint, but got none")
+	}
+	return nil
+}
+
+func (cfg *L1BeaconEndpointConfig) ShouldIgnoreBeaconCheck() bool {
+	return cfg.BeaconCheckIgnore
+}
+
+func (cfg *L1BeaconEndpointConfig) ShouldFetchAllSidecars() bool {
+	return cfg.BeaconFetchAllSidecars
+}
+
+func parseHTTPHeader(headerStr string) (http.Header, error) {
+	h := make(http.Header, 1)
+	s := strings.SplitN(headerStr, ": ", 2)
+	if len(s) != 2 {
+		return nil, errors.New("invalid header format")
+	}
+	h.Add(s[0], s[1])
+	return h, nil
+}
+
+type L1BlobEndpointConfig struct {
+	// Address of L1 blob node endpoint to use, multiple alternative addresses separated by commas are supported, and will rotate when error
+	NodeAddrs string
+
+	// RateLimit specifies a self-imposed rate-limit on L1 requests. 0 is no rate-limit.
+	RateLimit float64
+
+	// BatchSize specifies the maximum batch-size, which also applies as L1 rate-limit burst amount (if set).
+	BatchSize int
+}
+
+var _ L1BlobEndpointSetup = (*L1BlobEndpointConfig)(nil)
+
+func (cfg *L1BlobEndpointConfig) Check() error {
+	if cfg.NodeAddrs == "" {
+		return fmt.Errorf("empty L1 blob endpoint address")
+	}
+	if cfg.BatchSize < 1 || cfg.BatchSize > 500 {
+		return fmt.Errorf("batch size is invalid or unreasonable: %d", cfg.BatchSize)
+	}
+	if cfg.RateLimit < 0 {
+		return fmt.Errorf("rate limit cannot be negative")
+	}
+	return nil
+}
+
+func (cfg *L1BlobEndpointConfig) Setup(ctx context.Context, log log.Logger) ([]client.RPC, error) {
+	rpcClients := make([]client.RPC, 0)
+
+	opts := []client.RPCOption{
+		client.WithDialBackoff(10),
+	}
+	if cfg.RateLimit != 0 {
+		opts = append(opts, client.WithRateLimit(cfg.RateLimit, cfg.BatchSize))
+	}
+	isMultiUrl, urlList := client.MultiUrlParse(cfg.NodeAddrs)
+
+	if isMultiUrl {
+		for _, url := range urlList {
+			rpcClient, err := client.NewRPC(ctx, log, url, opts...)
+			if err != nil {
+				return nil, fmt.Errorf("setup blob client failed to dial L1 address (%s): %w", url, err)
+			}
+			rpcClients = append(rpcClients, rpcClient)
+		}
+	} else {
+		rpcClient, err := client.NewRPC(ctx, log, cfg.NodeAddrs, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("setup blob client failed to dial L1 address (%s): %w", cfg.NodeAddrs, err)
+		}
+		rpcClients = append(rpcClients, rpcClient)
+	}
+
+	return rpcClients, nil
 }

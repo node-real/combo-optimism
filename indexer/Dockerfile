@@ -1,18 +1,30 @@
-FROM golang:1.19.0-alpine3.15 as builder
+FROM --platform=$BUILDPLATFORM golang:1.21.1-alpine3.18 as builder
 
-RUN apk add --no-cache make gcc musl-dev linux-headers git jq bash
+RUN apk add --no-cache make ca-certificates gcc musl-dev linux-headers git jq bash
 
-COPY ./indexer /go/indexer
-COPY ./.git /go/.git
-COPY ./indexer/go.mod /go/indexer/go.mod
-COPY ./indexer/go.sum /go/indexer/go.sum
+COPY ./go.mod /app/go.mod
+COPY ./go.sum /app/go.sum
 
+WORKDIR /app
 
-WORKDIR /go/indexer
-RUN make
+RUN go mod download
 
-FROM alpine:3.15
+# build indexer with the shared go.mod & go.sum files
+COPY ./indexer /app/indexer
+COPY ./op-bindings /app/op-bindings
+COPY ./op-service /app/op-service
+COPY ./op-node /app/op-node
+COPY ./op-plasma /app/op-plasma
+COPY ./op-chain-ops /app/op-chain-ops
+COPY ./go.mod /app/go.mod
+COPY ./go.sum /app/go.sum
 
-COPY --from=builder /go/indexer/indexer /usr/local/bin
+WORKDIR /app/indexer
+RUN make indexer
 
+FROM alpine:3.18
+COPY --from=builder /app/indexer/indexer /usr/local/bin
+COPY --from=builder /app/indexer/migrations /app/indexer/migrations
+
+WORKDIR /app/indexer
 CMD ["indexer"]
