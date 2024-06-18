@@ -1,4 +1,4 @@
-package p2p
+package p2p_test
 
 import (
 	"context"
@@ -8,12 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum-optimism/optimism/op-node/rollup"
-
-	p2pMocks "github.com/ethereum-optimism/optimism/op-node/p2p/mocks"
-	"github.com/ethereum-optimism/optimism/op-node/p2p/store"
-	testlog "github.com/ethereum-optimism/optimism/op-node/testlog"
-	"github.com/ethereum-optimism/optimism/op-service/clock"
 	log "github.com/ethereum/go-ethereum/log"
 	ds "github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/sync"
@@ -23,12 +17,20 @@ import (
 	peer "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	bhost "github.com/libp2p/go-libp2p/p2p/host/blank"
+
+	//nolint:all
 	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoreds"
 	tswarm "github.com/libp2p/go-libp2p/p2p/net/swarm/testing"
-
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+
+	p2p "github.com/ethereum-optimism/optimism/op-node/p2p"
+	p2pMocks "github.com/ethereum-optimism/optimism/op-node/p2p/mocks"
+	"github.com/ethereum-optimism/optimism/op-node/p2p/store"
+	"github.com/ethereum-optimism/optimism/op-node/rollup"
+	"github.com/ethereum-optimism/optimism/op-service/clock"
+	testlog "github.com/ethereum-optimism/optimism/op-service/testlog"
 )
 
 // PeerScoresTestSuite tests peer parameterization.
@@ -44,7 +46,7 @@ type PeerScoresTestSuite struct {
 func (testSuite *PeerScoresTestSuite) SetupTest() {
 	testSuite.mockStore = &p2pMocks.Peerstore{}
 	testSuite.mockMetricer = &p2pMocks.ScoreMetrics{}
-	testSuite.logger = testlog.Logger(testSuite.T(), log.LvlError)
+	testSuite.logger = testlog.Logger(testSuite.T(), log.LevelError)
 }
 
 // TestPeerScores runs the PeerScoresTestSuite.
@@ -69,7 +71,7 @@ func (c *customPeerstoreNetwork) Close() error {
 // getNetHosts generates a slice of hosts using the [libp2p/go-libp2p] library.
 func getNetHosts(testSuite *PeerScoresTestSuite, ctx context.Context, n int) []host.Host {
 	var out []host.Host
-	log := testlog.Logger(testSuite.T(), log.LvlError)
+	log := testlog.Logger(testSuite.T(), log.LevelError)
 	for i := 0; i < n; i++ {
 		swarm := tswarm.GenSwarm(testSuite.T())
 		eps, err := store.NewExtendedPeerstore(ctx, log, clock.SystemClock, swarm.Peerstore(), sync.MutexWrap(ds.NewMapDatastore()), 1*time.Hour)
@@ -82,10 +84,22 @@ func getNetHosts(testSuite *PeerScoresTestSuite, ctx context.Context, n int) []h
 	return out
 }
 
+type discriminatingAppScorer struct {
+	badPeer peer.ID
+	p2p.NoopApplicationScorer
+}
+
+func (d *discriminatingAppScorer) ApplicationScore(id peer.ID) float64 {
+	if id == d.badPeer {
+		return -1000
+	}
+	return 0
+}
+
 func newGossipSubs(testSuite *PeerScoresTestSuite, ctx context.Context, hosts []host.Host) []*pubsub.PubSub {
 	var psubs []*pubsub.PubSub
 
-	logger := testlog.Logger(testSuite.T(), log.LvlCrit)
+	logger := testlog.Logger(testSuite.T(), log.LevelCrit)
 
 	// For each host, create a default gossipsub router.
 	for _, h := range hosts {
@@ -98,19 +112,12 @@ func newGossipSubs(testSuite *PeerScoresTestSuite, ctx context.Context, hosts []
 		extPeerStore, err := store.NewExtendedPeerstore(context.Background(), logger, clock.SystemClock, peerStore, dataStore, 1*time.Hour)
 		require.NoError(testSuite.T(), err)
 
-		scorer := NewScorer(
+		scorer := p2p.NewScorer(
 			&rollup.Config{L2ChainID: big.NewInt(123)},
-			extPeerStore, testSuite.mockMetricer, logger)
-		opts = append(opts, ConfigurePeerScoring(&Config{
-			ScoringParams: &ScoringParams{
+			extPeerStore, testSuite.mockMetricer, &discriminatingAppScorer{badPeer: hosts[0].ID()}, logger)
+		opts = append(opts, p2p.ConfigurePeerScoring(&p2p.Config{
+			ScoringParams: &p2p.ScoringParams{
 				PeerScoring: pubsub.PeerScoreParams{
-					AppSpecificScore: func(p peer.ID) float64 {
-						if p == hosts[0].ID() {
-							return -1000
-						} else {
-							return 0
-						}
-					},
 					AppSpecificWeight: 1,
 					DecayInterval:     time.Second,
 					DecayToZero:       0.01,

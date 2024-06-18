@@ -7,7 +7,11 @@ import (
 	"sync"
 	"time"
 
+	//nolint:all
+	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoreds"
+
 	libp2p "github.com/libp2p/go-libp2p"
+	mplex "github.com/libp2p/go-libp2p-mplex"
 	lconf "github.com/libp2p/go-libp2p/config"
 	"github.com/libp2p/go-libp2p/core/connmgr"
 	"github.com/libp2p/go-libp2p/core/host"
@@ -16,9 +20,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/sec/insecure"
 	basichost "github.com/libp2p/go-libp2p/p2p/host/basic"
-	"github.com/libp2p/go-libp2p/p2p/host/peerstore/pstoreds"
-	"github.com/libp2p/go-libp2p/p2p/muxer/mplex"
 	"github.com/libp2p/go-libp2p/p2p/muxer/yamux"
+	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	"github.com/libp2p/go-libp2p/p2p/security/noise"
 	tls "github.com/libp2p/go-libp2p/p2p/security/tls"
 	"github.com/libp2p/go-libp2p/p2p/transport/tcp"
@@ -50,6 +53,8 @@ type extraHost struct {
 
 	staticPeers []*peer.AddrInfo
 
+	pinging *PingService
+
 	quitC chan struct{}
 }
 
@@ -63,6 +68,9 @@ func (e *extraHost) ConnectionManager() connmgr.ConnManager {
 
 func (e *extraHost) Close() error {
 	close(e.quitC)
+	if e.pinging != nil {
+		e.pinging.Close()
+	}
 	return e.Host.Close()
 }
 
@@ -149,7 +157,7 @@ func (conf *Config) Host(log log.Logger, reporter metrics.Reporter, metrics Host
 	var scoreRetention time.Duration
 	if peerScoreParams != nil {
 		// Use the same retention period as gossip will if available
-		scoreRetention = peerScoreParams.RetainScore
+		scoreRetention = peerScoreParams.PeerScoring.RetainScore
 	} else {
 		// Disable score GC if peer scoring is disabled
 		scoreRetention = 0
@@ -186,9 +194,6 @@ func (conf *Config) Host(log log.Logger, reporter metrics.Reporter, metrics Host
 	tcpTransport := libp2p.Transport(
 		tcp.NewTCPTransport,
 		tcp.WithConnectionTimeout(time.Minute*60)) // break unused connections
-	if err != nil {
-		return nil, fmt.Errorf("failed to create TCP transport: %w", err)
-	}
 	// TODO: technically we can also run the node on websocket and QUIC transports. Maybe in the future?
 
 	var nat lconf.NATManagerC // disabled if nil
@@ -230,13 +235,17 @@ func (conf *Config) Host(log log.Logger, reporter metrics.Reporter, metrics Host
 		return nil, err
 	}
 
-	staticPeers := make([]*peer.AddrInfo, len(conf.StaticPeers))
-	for i, peerAddr := range conf.StaticPeers {
+	staticPeers := make([]*peer.AddrInfo, 0, len(conf.StaticPeers))
+	for _, peerAddr := range conf.StaticPeers {
 		addr, err := peer.AddrInfoFromP2pAddr(peerAddr)
 		if err != nil {
 			return nil, fmt.Errorf("bad peer address: %w", err)
 		}
-		staticPeers[i] = addr
+		if addr.ID == h.ID() {
+			log.Info("Static-peer list contains address of local peer, ignoring the address.", "peer_id", addr.ID, "addrs", addr.Addrs)
+			continue
+		}
+		staticPeers = append(staticPeers, addr)
 	}
 
 	out := &extraHost{
@@ -246,6 +255,14 @@ func (conf *Config) Host(log log.Logger, reporter metrics.Reporter, metrics Host
 		staticPeers: staticPeers,
 		quitC:       make(chan struct{}),
 	}
+
+	if conf.EnablePingService {
+		out.pinging = NewPingService(log,
+			func(ctx context.Context, peerID peer.ID) <-chan ping.Result {
+				return ping.Ping(ctx, h, peerID)
+			}, h.Network().Peers, clock.SystemClock)
+	}
+
 	out.initStaticPeers()
 	if len(conf.StaticPeers) > 0 {
 		go out.monitorStaticPeers()

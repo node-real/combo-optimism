@@ -1,36 +1,25 @@
 package flags
 
 import (
-	"fmt"
-	"strings"
+	"github.com/urfave/cli/v2"
 
-	"github.com/ethereum-optimism/optimism/op-node/chaincfg"
 	"github.com/ethereum-optimism/optimism/op-node/flags"
-	opservice "github.com/ethereum-optimism/optimism/op-service"
+	opflags "github.com/ethereum-optimism/optimism/op-service/flags"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
-	"github.com/urfave/cli"
+	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
+	oprpc "github.com/ethereum-optimism/optimism/op-service/rpc"
 )
 
 const envVarPrefix = "OP_BOOTNODE"
 
-var (
-	RollupConfig = cli.StringFlag{
-		Name:   flags.RollupConfig.Name,
-		Usage:  "Rollup chain parameters",
-		EnvVar: opservice.PrefixEnvVar(envVarPrefix, "ROLLUP_CONFIG"),
-	}
-	Network = cli.StringFlag{
-		Name:   flags.Network.Name,
-		Usage:  fmt.Sprintf("Predefined network selection. Available networks: %s", strings.Join(chaincfg.AvailableNetworks(), ", ")),
-		EnvVar: opservice.PrefixEnvVar(envVarPrefix, "NETWORK"),
-	}
-)
-
 var Flags = []cli.Flag{
-	RollupConfig,
-	Network,
+	opflags.CLINetworkFlag(envVarPrefix, ""),
+	opflags.CLIRollupConfigFlag(envVarPrefix, ""),
 }
 
 func init() {
+	Flags = append(Flags, flags.P2PFlags(envVarPrefix)...)
+	Flags = append(Flags, opmetrics.CLIFlags(envVarPrefix)...)
 	Flags = append(Flags, oplog.CLIFlags(envVarPrefix)...)
+	Flags = append(Flags, oprpc.CLIFlags(envVarPrefix)...)
 }

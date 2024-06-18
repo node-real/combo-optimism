@@ -1,11 +1,12 @@
 package metrics
 
 import (
+	"math/big"
+
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
-
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -16,11 +17,17 @@ type TxMetricer interface {
 	RecordPendingTx(pending int64)
 	TxConfirmed(*types.Receipt)
 	TxPublished(string)
+	RecordBaseFee(*big.Int)
+	RecordBlobBaseFee(*big.Int)
+	RecordBlobsNumber(int)
+	RecordTipCap(*big.Int)
 	RPCError()
 	client.FallbackClientMetricer
+	metrics.RPCMetricer
 }
 
 type TxMetrics struct {
+	metrics.RPCMetrics
 	TxL1GasFee         prometheus.Gauge
 	txFees             prometheus.Counter
 	TxGasBump          prometheus.Gauge
@@ -29,8 +36,12 @@ type TxMetrics struct {
 	currentNonce       prometheus.Gauge
 	pendingTxs         prometheus.Gauge
 	txPublishError     *prometheus.CounterVec
-	publishEvent       metrics.Event
+	publishEvent       *metrics.Event
 	confirmEvent       metrics.EventVec
+	baseFee            prometheus.Gauge
+	blobBaseFee        prometheus.Gauge
+	blobsNumber        prometheus.Gauge
+	tipCap             prometheus.Gauge
 	rpcError           prometheus.Counter
 	*client.FallbackClientMetrics
 }
@@ -50,6 +61,7 @@ var _ TxMetricer = (*TxMetrics)(nil)
 
 func MakeTxMetrics(ns string, factory metrics.Factory) TxMetrics {
 	return TxMetrics{
+		RPCMetrics: metrics.MakeRPCMetrics(ns, factory),
 		TxL1GasFee: factory.NewGauge(prometheus.GaugeOpts{
 			Namespace: ns,
 			Name:      "tx_fee_gwei",
@@ -101,6 +113,30 @@ func MakeTxMetrics(ns string, factory metrics.Factory) TxMetrics {
 		}, []string{"error"}),
 		confirmEvent: metrics.NewEventVec(factory, ns, "txmgr", "confirm", "tx confirm", []string{"status"}),
 		publishEvent: metrics.NewEvent(factory, ns, "txmgr", "publish", "tx publish"),
+		baseFee: factory.NewGauge(prometheus.GaugeOpts{
+			Namespace: ns,
+			Name:      "basefee_wei",
+			Help:      "Latest L1 base fee (in Wei)",
+			Subsystem: "txmgr",
+		}),
+		blobBaseFee: factory.NewGauge(prometheus.GaugeOpts{
+			Namespace: ns,
+			Name:      "blob_basefee_wei",
+			Help:      "Latest Blob base fee (in Wei)",
+			Subsystem: "txmgr",
+		}),
+		blobsNumber: factory.NewGauge(prometheus.GaugeOpts{
+			Namespace: ns,
+			Name:      "blobs_number_in_tx",
+			Help:      "number of blobs in tx",
+			Subsystem: "txmgr",
+		}),
+		tipCap: factory.NewGauge(prometheus.GaugeOpts{
+			Namespace: ns,
+			Name:      "tipcap_wei",
+			Help:      "Latest L1 suggested tip cap (in Wei)",
+			Subsystem: "txmgr",
+		}),
 		rpcError: factory.NewCounter(prometheus.CounterOpts{
 			Namespace: ns,
 			Name:      "rpc_error_count",
@@ -126,7 +162,6 @@ func (t *TxMetrics) TxConfirmed(receipt *types.Receipt) {
 	t.TxL1GasFee.Set(fee)
 	t.txFees.Add(fee)
 	t.txFeeHistogram.Observe(fee)
-
 }
 
 func (t *TxMetrics) RecordGasBumpCount(times int) {
@@ -143,6 +178,25 @@ func (t *TxMetrics) TxPublished(errString string) {
 	} else {
 		t.publishEvent.Record()
 	}
+}
+
+func (t *TxMetrics) RecordBaseFee(baseFee *big.Int) {
+	bff, _ := baseFee.Float64()
+	t.baseFee.Set(bff)
+}
+
+func (t *TxMetrics) RecordBlobBaseFee(blobBaseFee *big.Int) {
+	bff, _ := blobBaseFee.Float64()
+	t.blobBaseFee.Set(bff)
+}
+
+func (t *TxMetrics) RecordBlobsNumber(number int) {
+	t.blobsNumber.Set(float64(number))
+}
+
+func (t *TxMetrics) RecordTipCap(tipcap *big.Int) {
+	tcf, _ := tipcap.Float64()
+	t.tipCap.Set(tcf)
 }
 
 func (t *TxMetrics) RPCError() {

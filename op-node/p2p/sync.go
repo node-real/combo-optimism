@@ -23,8 +23,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
 // StreamCtxFn provides a new context to use when handling stream requests
@@ -82,7 +82,7 @@ func MakeStreamHandler(resourcesCtx context.Context, log log.Logger, fn requestH
 
 type newStreamFn func(ctx context.Context, peerId peer.ID, protocolId ...protocol.ID) (network.Stream, error)
 
-type receivePayloadFn func(ctx context.Context, from peer.ID, payload *eth.ExecutionPayload) error
+type receivePayloadFn func(ctx context.Context, from peer.ID, payload *eth.ExecutionPayloadEnvelope) error
 
 type rangeRequest struct {
 	start uint64
@@ -90,7 +90,7 @@ type rangeRequest struct {
 }
 
 type syncResult struct {
-	payload *eth.ExecutionPayload
+	payload *eth.ExecutionPayloadEnvelope
 	peer    peer.ID
 }
 
@@ -109,6 +109,12 @@ type inFlightCheck struct {
 type SyncClientMetrics interface {
 	ClientPayloadByNumberEvent(num uint64, resultCode byte, duration time.Duration)
 	PayloadsQuarantineSize(n int)
+}
+
+type SyncPeerScorer interface {
+	onValidResponse(id peer.ID)
+	onResponseError(id peer.ID)
+	onRejectedPayload(id peer.ID)
 }
 
 // SyncClient implements a reverse chain sync with a minimal interface:
@@ -180,7 +186,8 @@ type SyncClient struct {
 
 	cfg *rollup.Config
 
-	metrics SyncClientMetrics
+	metrics   SyncClientMetrics
+	appScorer SyncPeerScorer
 
 	newStreamFn     newStreamFn
 	payloadByNumber protocol.ID
@@ -227,13 +234,14 @@ type SyncClient struct {
 	closingPeers bool
 }
 
-func NewSyncClient(log log.Logger, cfg *rollup.Config, newStream newStreamFn, rcv receivePayloadFn, metrics SyncClientMetrics) *SyncClient {
+func NewSyncClient(log log.Logger, cfg *rollup.Config, newStream newStreamFn, rcv receivePayloadFn, metrics SyncClientMetrics, appScorer SyncPeerScorer) *SyncClient {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c := &SyncClient{
 		log:             log,
 		cfg:             cfg,
 		metrics:         metrics,
+		appScorer:       appScorer,
 		newStreamFn:     newStream,
 		payloadByNumber: PayloadByNumberProtocolID(cfg.L2ChainID),
 		peers:           make(map[peer.ID]context.CancelFunc),
@@ -268,11 +276,11 @@ func (s *SyncClient) Start() {
 func (s *SyncClient) AddPeer(id peer.ID) {
 	s.peersLock.Lock()
 	defer s.peersLock.Unlock()
-	if _, ok := s.peers[id]; ok {
-		s.log.Warn("cannot register peer for sync duties, peer was already registered", "peer", id)
+	if s.closingPeers {
 		return
 	}
-	if s.closingPeers {
+	if _, ok := s.peers[id]; ok {
+		s.log.Warn("cannot register peer for sync duties, peer was already registered", "peer", id)
 		return
 	}
 	s.wg.Add(1)
@@ -420,13 +428,14 @@ func (s *SyncClient) onRangeRequest(ctx context.Context, req rangeRequest) {
 }
 
 func (s *SyncClient) onQuarantineEvict(key common.Hash, value syncResult) {
-	delete(s.quarantineByNum, uint64(value.payload.BlockNumber))
+	delete(s.quarantineByNum, uint64(value.payload.ExecutionPayload.BlockNumber))
 	s.metrics.PayloadsQuarantineSize(s.quarantine.Len())
 	if !s.trusted.Contains(key) {
-		s.log.Debug("evicting untrusted payload from quarantine", "id", value.payload.ID(), "peer", value.peer)
-		// TODO(CLI-3732): downscore peer for having provided us a bad block that never turned out to be canonical
+		s.log.Debug("evicting untrusted payload from quarantine", "id", value.payload.ExecutionPayload.ID(), "peer", value.peer)
+		// Down-score peer for having provided us a bad block that never turned out to be canonical
+		s.appScorer.onRejectedPayload(value.peer)
 	} else {
-		s.log.Debug("evicting trusted payload from quarantine", "id", value.payload.ID(), "peer", value.peer)
+		s.log.Debug("evicting trusted payload from quarantine", "id", value.payload.ExecutionPayload.ID(), "peer", value.peer)
 	}
 }
 
@@ -446,27 +455,28 @@ func (s *SyncClient) tryPromote(h common.Hash) {
 }
 
 func (s *SyncClient) promote(ctx context.Context, res syncResult) {
-	s.log.Debug("promoting p2p sync result", "payload", res.payload.ID(), "peer", res.peer)
+	s.log.Debug("promoting p2p sync result", "payload", res.payload.ExecutionPayload.ID(), "peer", res.peer)
+
 	if err := s.receivePayload(ctx, res.peer, res.payload); err != nil {
 		s.log.Warn("failed to promote payload, receiver error", "err", err)
 		return
 	}
-	s.trusted.Add(res.payload.BlockHash, struct{}{})
-	if s.quarantine.Remove(res.payload.BlockHash) {
-		s.log.Debug("promoted previously p2p-synced block from quarantine to main", "id", res.payload.ID())
+	s.trusted.Add(res.payload.ExecutionPayload.BlockHash, struct{}{})
+	if s.quarantine.Remove(res.payload.ExecutionPayload.BlockHash) {
+		s.log.Debug("promoted previously p2p-synced block from quarantine to main", "id", res.payload.ExecutionPayload.ID())
 	} else {
-		s.log.Debug("promoted new p2p-synced block to main", "id", res.payload.ID())
+		s.log.Debug("promoted new p2p-synced block to main", "id", res.payload.ExecutionPayload.ID())
 	}
 
 	// Mark parent block as trusted, so that we can promote it once we receive it / find it
-	s.trusted.Add(res.payload.ParentHash, struct{}{})
+	s.trusted.Add(res.payload.ExecutionPayload.ParentHash, struct{}{})
 
 	// Try to promote the parent block too, if any: previous unverifiable data may now be canonical
-	s.tryPromote(res.payload.ParentHash)
+	s.tryPromote(res.payload.ExecutionPayload.ParentHash)
 
 	// In case we don't have the parent, and what we have in quarantine is wrong,
 	// clear what we buffered in favor of fetching something else.
-	if h, ok := s.quarantineByNum[uint64(res.payload.BlockNumber)-1]; ok {
+	if h, ok := s.quarantineByNum[uint64(res.payload.ExecutionPayload.BlockNumber)-1]; ok {
 		s.quarantine.Remove(h)
 	}
 }
@@ -474,15 +484,16 @@ func (s *SyncClient) promote(ctx context.Context, res syncResult) {
 // onResult is exclusively called by the main loop, and has thus direct access to the request bookkeeping state.
 // This function verifies if the result is canonical, and either promotes the result or moves the result into quarantine.
 func (s *SyncClient) onResult(ctx context.Context, res syncResult) {
-	s.log.Debug("processing p2p sync result", "payload", res.payload.ID(), "peer", res.peer)
+	payload := res.payload.ExecutionPayload
+	s.log.Debug("processing p2p sync result", "payload", payload.ID(), "peer", res.peer)
 	// Clean up the in-flight request, we have a result now.
-	delete(s.inFlight, uint64(res.payload.BlockNumber))
+	delete(s.inFlight, uint64(payload.BlockNumber))
 	// Always put it in quarantine first. If promotion fails because the receiver is too busy, this functions as cache.
-	s.quarantine.Add(res.payload.BlockHash, res)
-	s.quarantineByNum[uint64(res.payload.BlockNumber)] = res.payload.BlockHash
+	s.quarantine.Add(payload.BlockHash, res)
+	s.quarantineByNum[uint64(payload.BlockNumber)] = payload.BlockHash
 	s.metrics.PayloadsQuarantineSize(s.quarantine.Len())
 	// If we know this block is canonical, then promote it
-	if s.trusted.Contains(res.payload.BlockHash) {
+	if s.trusted.Contains(payload.BlockHash) {
 		s.promote(ctx, res)
 	}
 }
@@ -492,9 +503,9 @@ func (s *SyncClient) peerLoop(ctx context.Context, id peer.ID) {
 	defer func() {
 		s.peersLock.Lock()
 		delete(s.peers, id) // clean up
+		s.log.Debug("stopped syncing loop of peer", "id", id)
 		s.wg.Done()
 		s.peersLock.Unlock()
-		s.log.Debug("stopped syncing loop of peer", "id", id)
 	}()
 
 	log := s.log.New("peer", id)
@@ -525,6 +536,7 @@ func (s *SyncClient) peerLoop(ctx context.Context, id peer.ID) {
 				// mark as complete if there's an error: we are not sending any result and can complete immediately.
 				pr.complete.Store(true)
 				log.Warn("failed p2p sync request", "num", pr.num, "err", err)
+				s.appScorer.onResponseError(id)
 				// If we hit an error, then count it as many requests.
 				// We'd like to avoid making more requests for a while, to back off.
 				if err := rl.WaitN(ctx, clientErrRateCost); err != nil {
@@ -532,11 +544,9 @@ func (s *SyncClient) peerLoop(ctx context.Context, id peer.ID) {
 				}
 			} else {
 				log.Debug("completed p2p sync request", "num", pr.num)
+				s.appScorer.onValidResponse(id)
 			}
 			took := time.Since(start)
-			// TODO(CLI-3732): update scores: depending on the speed of the result,
-			//  increase the p2p-sync part of the peer score
-			//  (don't allow the score to grow indefinitely only based on this factor though)
 
 			resultCode := byte(0)
 			if err != nil {
@@ -563,7 +573,7 @@ func (r requestResultErr) ResultCode() byte {
 	return byte(r)
 }
 
-func (s *SyncClient) doRequest(ctx context.Context, id peer.ID, n uint64) error {
+func (s *SyncClient) doRequest(ctx context.Context, id peer.ID, expectedBlockNum uint64) error {
 	// open stream to peer
 	reqCtx, reqCancel := context.WithTimeout(ctx, streamTimeout)
 	str, err := s.newStreamFn(reqCtx, id, s.payloadByNumber)
@@ -574,8 +584,8 @@ func (s *SyncClient) doRequest(ctx context.Context, id peer.ID, n uint64) error 
 	defer str.Close()
 	// set write timeout (if available)
 	_ = str.SetWriteDeadline(time.Now().Add(clientWriteRequestTimeout))
-	if err := binary.Write(str, binary.LittleEndian, n); err != nil {
-		return fmt.Errorf("failed to write request (%d): %w", n, err)
+	if err := binary.Write(str, binary.LittleEndian, expectedBlockNum); err != nil {
+		return fmt.Errorf("failed to write request (%d): %w", expectedBlockNum, err)
 	}
 	if err := str.CloseWrite(); err != nil {
 		return fmt.Errorf("failed to close writer side while making request: %w", err)
@@ -600,8 +610,8 @@ func (s *SyncClient) doRequest(ctx context.Context, id peer.ID, n uint64) error 
 		return fmt.Errorf("failed to read version part of response: %w", err)
 	}
 	version := binary.LittleEndian.Uint32(versionData[:])
-	if version != 0 {
-		return fmt.Errorf("unrecognized ExecutionPayload version: %d", version)
+	if version != 0 && version != 1 {
+		return fmt.Errorf("unrecognized version: %d", version)
 	}
 	// payload is SSZ encoded with Snappy framed compression
 	r = snappy.NewReader(r)
@@ -612,30 +622,59 @@ func (s *SyncClient) doRequest(ctx context.Context, id peer.ID, n uint64) error 
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
-	var res eth.ExecutionPayload
-	if err := res.UnmarshalSSZ(uint32(len(data)), bytes.NewReader(data)); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
+
+	envelope := &eth.ExecutionPayloadEnvelope{}
+
+	if version == 0 {
+		expectedBlockTime := s.cfg.TimestampForBlock(expectedBlockNum)
+		envelope, err = s.readExecutionPayload(data, expectedBlockTime)
+		if err != nil {
+			return err
+		}
+	} else if version == 1 {
+		if err := envelope.UnmarshalSSZ(uint32(len(data)), bytes.NewReader(data)); err != nil {
+			return fmt.Errorf("failed to decode execution payload envelope response: %w", err)
+		}
+	} else {
+		panic(fmt.Errorf("should have already filtered by version, but got: %d", version))
 	}
+
 	if err := str.CloseRead(); err != nil {
 		return fmt.Errorf("failed to close reading side")
 	}
-	if err := verifyBlock(&res, n); err != nil {
+	if err := verifyBlock(envelope, expectedBlockNum); err != nil {
 		return fmt.Errorf("received execution payload is invalid: %w", err)
 	}
 	select {
-	case s.results <- syncResult{payload: &res, peer: id}:
+	case s.results <- syncResult{payload: envelope, peer: id}:
 	case <-ctx.Done():
 		return fmt.Errorf("failed to process response, sync client is too busy: %w", err)
 	}
 	return nil
 }
 
-func verifyBlock(payload *eth.ExecutionPayload, expectedNum uint64) error {
+func (s *SyncClient) readExecutionPayload(data []byte, expectedTime uint64) (*eth.ExecutionPayloadEnvelope, error) {
+	blockVersion := eth.BlockV1
+	if s.cfg.IsCanyon(expectedTime) {
+		blockVersion = eth.BlockV2
+	}
+
+	var res eth.ExecutionPayload
+	if err := res.UnmarshalSSZ(blockVersion, uint32(len(data)), bytes.NewReader(data)); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &eth.ExecutionPayloadEnvelope{ExecutionPayload: &res}, nil
+}
+
+func verifyBlock(envelope *eth.ExecutionPayloadEnvelope, expectedNum uint64) error {
+	payload := envelope.ExecutionPayload
+
 	// verify L2 block
 	if expectedNum != uint64(payload.BlockNumber) {
 		return fmt.Errorf("received execution payload for block %d, but expected block %d", payload.BlockNumber, expectedNum)
 	}
-	actual, ok := payload.CheckBlockHash()
+	actual, ok := envelope.CheckBlockHash()
 	if !ok { // payload itself contains bad block hash
 		return fmt.Errorf("received execution payload for block %d with bad block hash %s, expected %s", expectedNum, payload.BlockHash, actual)
 	}
@@ -649,7 +688,7 @@ type peerStat struct {
 }
 
 type L2Chain interface {
-	PayloadByNumber(ctx context.Context, number uint64) (*eth.ExecutionPayload, error)
+	PayloadByNumber(ctx context.Context, number uint64) (*eth.ExecutionPayloadEnvelope, error)
 }
 
 type ReqRespServerMetrics interface {
@@ -775,7 +814,7 @@ func (srv *ReqRespServer) handleSyncRequest(ctx context.Context, stream network.
 		return req, fmt.Errorf("cannot serve request for L2 block %d after max expected block (%v): %w", req, max, invalidRequestErr)
 	}
 
-	payload, err := srv.l2.PayloadByNumber(ctx, req)
+	envelope, err := srv.l2.PayloadByNumber(ctx, req)
 	if err != nil {
 		if errors.Is(err, ethereum.NotFound) {
 			return req, fmt.Errorf("peer requested unknown block by number: %w", err)
@@ -787,18 +826,33 @@ func (srv *ReqRespServer) handleSyncRequest(ctx context.Context, stream network.
 	// We set write deadline, if available, to safely write without blocking on a throttling peer connection
 	_ = stream.SetWriteDeadline(time.Now().Add(serverWriteChunkTimeout))
 
-	// 0 - resultCode: success = 0
-	// 1:5 - version: 0
-	var tmp [5]byte
-	if _, err := stream.Write(tmp[:]); err != nil {
-		return req, fmt.Errorf("failed to write response header data: %w", err)
-	}
 	w := snappy.NewBufferedWriter(stream)
-	if _, err := payload.MarshalSSZ(w); err != nil {
-		return req, fmt.Errorf("failed to write payload to sync response: %w", err)
+
+	if srv.cfg.IsEcotone(uint64(envelope.ExecutionPayload.Timestamp)) {
+		// 0 - resultCode: success = 0
+		// 1:5 - version: 1 (little endian)
+		tmp := [5]byte{0, 1, 0, 0, 0}
+		if _, err := stream.Write(tmp[:]); err != nil {
+			return req, fmt.Errorf("failed to write response header data: %w", err)
+		}
+		if _, err := envelope.MarshalSSZ(w); err != nil {
+			return req, fmt.Errorf("failed to write payload to sync response: %w", err)
+		}
+	} else {
+		// 0 - resultCode: success = 0
+		// 1:5 - version: 0
+		var tmp [5]byte
+		if _, err := stream.Write(tmp[:]); err != nil {
+			return req, fmt.Errorf("failed to write response header data: %w", err)
+		}
+		if _, err := envelope.ExecutionPayload.MarshalSSZ(w); err != nil {
+			return req, fmt.Errorf("failed to write payload to sync response: %w", err)
+		}
 	}
+
 	if err := w.Close(); err != nil {
 		return req, fmt.Errorf("failed to finishing writing payload to sync response: %w", err)
 	}
+
 	return req, nil
 }

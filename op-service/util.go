@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
@@ -13,11 +14,13 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 )
 
-func PrefixEnvVar(prefix, suffix string) string {
-	return prefix + "_" + suffix
+// PrefixEnvVar adds a prefix to the environment variable,
+// and returns the env-var wrapped in a slice for usage with urfave CLI v2.
+func PrefixEnvVar(prefix, suffix string) []string {
+	return []string{prefix + "_" + suffix}
 }
 
 // ValidateEnvVars logs all env vars that are found where the env var is
@@ -30,11 +33,17 @@ func ValidateEnvVars(prefix string, flags []cli.Flag, log log.Logger) {
 	}
 }
 
+func FlagNameToEnvVarName(f string, prefix string) string {
+	f = strings.ReplaceAll(strings.ReplaceAll(strings.ToUpper(f), ".", "_"), "-", "_")
+	return fmt.Sprintf("%s_%s", prefix, f)
+}
+
 func cliFlagsToEnvVars(flags []cli.Flag) map[string]struct{} {
 	definedEnvVars := make(map[string]struct{})
 	for _, flag := range flags {
-		envVarField := reflect.ValueOf(flag).FieldByName("EnvVar")
-		if envVarField.IsValid() {
+		envVars := reflect.ValueOf(flag).Elem().FieldByName("EnvVars")
+		for i := 0; i < envVars.Len(); i++ {
+			envVarField := envVars.Index(i)
 			definedEnvVars[envVarField.String()] = struct{}{}
 		}
 	}
@@ -57,6 +66,15 @@ func validateEnvVars(prefix string, providedEnvVars []string, definedEnvVars map
 		}
 	}
 	return out
+}
+
+// WarnOnDeprecatedFlags iterates through the provided deprecatedFlags and logs a warning for each that is set.
+func WarnOnDeprecatedFlags(ctx *cli.Context, deprecatedFlags []cli.Flag, log log.Logger) {
+	for _, flag := range deprecatedFlags {
+		if ctx.IsSet(flag.Names()[0]) {
+			log.Warn("Found a deprecated flag which will be removed in a future version", "flag_name", flag.Names()[0])
+		}
+	}
 }
 
 // ParseAddress parses an ETH address from a hex string. This method will fail if
@@ -101,4 +119,26 @@ func CloseAction(fn func(ctx context.Context, shutdown <-chan struct{}) error) e
 		cancel()
 		return err
 	}
+}
+
+// FindMonorepoRoot will recursively search upwards for a go.mod file.
+// This depends on the structure of the monorepo having a go.mod file at the root.
+func FindMonorepoRoot(startDir string) (string, error) {
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		return "", err
+	}
+	for {
+		modulePath := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(modulePath); err == nil {
+			return dir, nil
+		}
+		parentDir := filepath.Dir(dir)
+		// Check if we reached the filesystem root
+		if parentDir == dir {
+			break
+		}
+		dir = parentDir
+	}
+	return "", fmt.Errorf("monorepo root not found")
 }

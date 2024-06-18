@@ -2,6 +2,8 @@ package proxyd
 
 import (
 	"context"
+	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -262,6 +264,41 @@ var (
 		"backend_group_name",
 	})
 
+	consensusHAError = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: MetricsNamespace,
+		Name:      "group_consensus_ha_error",
+		Help:      "Consensus HA error count",
+	}, []string{
+		"error",
+	})
+
+	consensusHALatestBlock = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: MetricsNamespace,
+		Name:      "group_consensus_ha_latest_block",
+		Help:      "Consensus HA latest block",
+	}, []string{
+		"backend_group_name",
+		"leader",
+	})
+
+	consensusHASafeBlock = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: MetricsNamespace,
+		Name:      "group_consensus_ha_safe_block",
+		Help:      "Consensus HA safe block",
+	}, []string{
+		"backend_group_name",
+		"leader",
+	})
+
+	consensusHAFinalizedBlock = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: MetricsNamespace,
+		Name:      "group_consensus_ha_finalized_block",
+		Help:      "Consensus HA finalized block",
+	}, []string{
+		"backend_group_name",
+		"leader",
+	})
+
 	backendLatestBlockBackend = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: MetricsNamespace,
 		Name:      "backend_latest_block",
@@ -436,6 +473,28 @@ func RecordCacheError(method string) {
 
 func RecordBatchSize(size int) {
 	batchSizeHistogram.Observe(float64(size))
+}
+
+var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z ]+`)
+
+func RecordGroupConsensusError(group *BackendGroup, label string, err error) {
+	errClean := nonAlphanumericRegex.ReplaceAllString(err.Error(), "")
+	errClean = strings.ReplaceAll(errClean, " ", "_")
+	errClean = strings.ReplaceAll(errClean, "__", "_")
+	label = fmt.Sprintf("%s.%s", label, errClean)
+	consensusHAError.WithLabelValues(label).Inc()
+}
+
+func RecordGroupConsensusHALatestBlock(group *BackendGroup, leader string, blockNumber hexutil.Uint64) {
+	consensusHALatestBlock.WithLabelValues(group.Name, leader).Set(float64(blockNumber))
+}
+
+func RecordGroupConsensusHASafeBlock(group *BackendGroup, leader string, blockNumber hexutil.Uint64) {
+	consensusHASafeBlock.WithLabelValues(group.Name, leader).Set(float64(blockNumber))
+}
+
+func RecordGroupConsensusHAFinalizedBlock(group *BackendGroup, leader string, blockNumber hexutil.Uint64) {
+	consensusHAFinalizedBlock.WithLabelValues(group.Name, leader).Set(float64(blockNumber))
 }
 
 func RecordGroupConsensusLatestBlock(group *BackendGroup, blockNumber hexutil.Uint64) {

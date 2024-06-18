@@ -1,13 +1,16 @@
 package database
 
 import (
-	"context"
 	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 /**
@@ -15,49 +18,56 @@ import (
  */
 
 type BlockHeader struct {
-	Hash       common.Hash `gorm:"primaryKey;serializer:json"`
-	ParentHash common.Hash `gorm:"serializer:json"`
-	Number     U256
+	Hash       common.Hash `gorm:"primaryKey;serializer:bytes"`
+	ParentHash common.Hash `gorm:"serializer:bytes"`
+	Number     *big.Int    `gorm:"serializer:u256"`
 	Timestamp  uint64
+
+	RLPHeader *RLPHeader `gorm:"serializer:rlp;column:rlp_bytes"`
+}
+
+func BlockHeaderFromHeader(header *types.Header) BlockHeader {
+	return BlockHeader{
+		Hash:       header.Hash(),
+		ParentHash: header.ParentHash,
+		Number:     header.Number,
+		Timestamp:  header.Time,
+
+		RLPHeader: (*RLPHeader)(header),
+	}
+}
+
+func (b BlockHeader) String() string {
+	return fmt.Sprintf("{Hash: %s, Number: %s}", b.Hash, b.Number)
 }
 
 type L1BlockHeader struct {
-	BlockHeader
+	BlockHeader `gorm:"embedded"`
 }
 
 type L2BlockHeader struct {
-	BlockHeader
-
-	// Marked when the proposed output is finalized on L1.
-	// All bedrock blocks will have `LegacyStateBatchIndex ^== NULL`
-	L1BlockHash           *common.Hash `gorm:"serializer:json"`
-	LegacyStateBatchIndex *uint64
-}
-
-type LegacyStateBatch struct {
-	// `default:0` is added since gorm would interepret 0 as NULL
-	// violating the primary key constraint.
-	Index uint64 `gorm:"primaryKey;default:0"`
-
-	Root        common.Hash `gorm:"serializer:json"`
-	Size        uint64
-	PrevTotal   uint64
-	L1BlockHash common.Hash `gorm:"serializer:json"`
+	BlockHeader `gorm:"embedded"`
 }
 
 type BlocksView interface {
-	FinalizedL1BlockHeader() (*L1BlockHeader, error)
-	FinalizedL2BlockHeader() (*L2BlockHeader, error)
+	L1BlockHeader(common.Hash) (*L1BlockHeader, error)
+	L1BlockHeaderWithFilter(BlockHeader) (*L1BlockHeader, error)
+	L1BlockHeaderWithScope(func(db *gorm.DB) *gorm.DB) (*L1BlockHeader, error)
+	L1LatestBlockHeader() (*L1BlockHeader, error)
+
+	L2BlockHeader(common.Hash) (*L2BlockHeader, error)
+	L2BlockHeaderWithFilter(BlockHeader) (*L2BlockHeader, error)
+	L2BlockHeaderWithScope(func(db *gorm.DB) *gorm.DB) (*L2BlockHeader, error)
+	L2LatestBlockHeader() (*L2BlockHeader, error)
 }
 
 type BlocksDB interface {
 	BlocksView
 
-	StoreL1BlockHeaders([]*L1BlockHeader) error
-	StoreLegacyStateBatch(*LegacyStateBatch) error
+	StoreL1BlockHeaders([]L1BlockHeader) error
+	StoreL2BlockHeaders([]L2BlockHeader) error
 
-	StoreL2BlockHeaders([]*L2BlockHeader) error
-	MarkFinalizedL1RootForL2Block(common.Hash, common.Hash) error
+	DeleteReorgedState(uint64) error
 }
 
 /**
@@ -65,51 +75,48 @@ type BlocksDB interface {
  */
 
 type blocksDB struct {
+	log  log.Logger
 	gorm *gorm.DB
 }
 
-func newBlocksDB(db *gorm.DB) BlocksDB {
-	return &blocksDB{gorm: db}
+func newBlocksDB(log log.Logger, db *gorm.DB) BlocksDB {
+	return &blocksDB{log: log.New("table", "blocks"), gorm: db}
 }
 
 // L1
 
-func (db *blocksDB) StoreL1BlockHeaders(headers []*L1BlockHeader) error {
-	result := db.gorm.Create(&headers)
+func (db *blocksDB) StoreL1BlockHeaders(headers []L1BlockHeader) error {
+	deduped := db.gorm.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "hash"}}, DoNothing: true})
+	result := deduped.Create(&headers)
+	if result.Error == nil && int(result.RowsAffected) < len(headers) {
+		db.log.Warn("ignored L1 block duplicates", "duplicates", len(headers)-int(result.RowsAffected))
+	}
+
 	return result.Error
 }
 
-func (db *blocksDB) StoreLegacyStateBatch(stateBatch *LegacyStateBatch) error {
-	result := db.gorm.Create(stateBatch)
-	if result.Error != nil {
-		return result.Error
-	}
-
-	// Mark this state batch index & l1 block hash for all applicable l2 blocks
-	l2Headers := make([]*L2BlockHeader, stateBatch.Size)
-
-	// [start, end] range is inclusive. Since `PrevTotal` is the index of the prior batch, no
-	// need to subtract one when adding the size
-	startHeight := U256{Int: big.NewInt(int64(stateBatch.PrevTotal + 1))}
-	endHeight := U256{Int: big.NewInt(int64(stateBatch.PrevTotal + stateBatch.Size))}
-	result = db.gorm.Where("number BETWEEN ? AND ?", &startHeight, &endHeight).Find(&l2Headers)
-	if result.Error != nil {
-		return result.Error
-	} else if result.RowsAffected != int64(stateBatch.Size) {
-		return errors.New("state batch size exceeds number of indexed l2 blocks")
-	}
-
-	for _, header := range l2Headers {
-		header.LegacyStateBatchIndex = &stateBatch.Index
-		header.L1BlockHash = &stateBatch.L1BlockHash
-	}
-
-	result = db.gorm.Save(&l2Headers)
-	return result.Error
+func (db *blocksDB) L1BlockHeader(hash common.Hash) (*L1BlockHeader, error) {
+	return db.L1BlockHeaderWithFilter(BlockHeader{Hash: hash})
 }
 
-// FinalizedL1BlockHeader returns the latest L1 block header stored in the database, nil otherwise
-func (db *blocksDB) FinalizedL1BlockHeader() (*L1BlockHeader, error) {
+func (db *blocksDB) L1BlockHeaderWithFilter(filter BlockHeader) (*L1BlockHeader, error) {
+	return db.L1BlockHeaderWithScope(func(gorm *gorm.DB) *gorm.DB { return gorm.Where(&filter) })
+}
+
+func (db *blocksDB) L1BlockHeaderWithScope(scope func(*gorm.DB) *gorm.DB) (*L1BlockHeader, error) {
+	var l1Header L1BlockHeader
+	result := db.gorm.Scopes(scope).Take(&l1Header)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, result.Error
+	}
+
+	return &l1Header, nil
+}
+
+func (db *blocksDB) L1LatestBlockHeader() (*L1BlockHeader, error) {
 	var l1Header L1BlockHeader
 	result := db.gorm.Order("number DESC").Take(&l1Header)
 	if result.Error != nil {
@@ -125,39 +132,67 @@ func (db *blocksDB) FinalizedL1BlockHeader() (*L1BlockHeader, error) {
 
 // L2
 
-func (db *blocksDB) StoreL2BlockHeaders(headers []*L2BlockHeader) error {
-	result := db.gorm.Create(&headers)
+func (db *blocksDB) StoreL2BlockHeaders(headers []L2BlockHeader) error {
+	deduped := db.gorm.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "hash"}}, DoNothing: true})
+	result := deduped.Create(&headers)
+	if result.Error == nil && int(result.RowsAffected) < len(headers) {
+		db.log.Warn("ignored L2 block duplicates", "duplicates", len(headers)-int(result.RowsAffected))
+	}
+
 	return result.Error
 }
 
-// FinalizedL2BlockHeader returns the latest L2 block header stored in the database, nil otherwise
-func (db *blocksDB) FinalizedL2BlockHeader() (*L2BlockHeader, error) {
+func (db *blocksDB) L2BlockHeader(hash common.Hash) (*L2BlockHeader, error) {
+	return db.L2BlockHeaderWithFilter(BlockHeader{Hash: hash})
+}
+
+func (db *blocksDB) L2BlockHeaderWithFilter(filter BlockHeader) (*L2BlockHeader, error) {
+	return db.L2BlockHeaderWithScope(func(gorm *gorm.DB) *gorm.DB { return gorm.Where(&filter) })
+}
+
+func (db *blocksDB) L2BlockHeaderWithScope(scope func(*gorm.DB) *gorm.DB) (*L2BlockHeader, error) {
+	var l2Header L2BlockHeader
+	result := db.gorm.Scopes(scope).Take(&l2Header)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, result.Error
+	}
+
+	return &l2Header, nil
+}
+
+func (db *blocksDB) L2LatestBlockHeader() (*L2BlockHeader, error) {
 	var l2Header L2BlockHeader
 	result := db.gorm.Order("number DESC").Take(&l2Header)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-
 		return nil, result.Error
 	}
 
-	result.Logger.Info(context.Background(), "number ", l2Header.Number)
 	return &l2Header, nil
 }
 
-// MarkFinalizedL1RootForL2Block updates the stored L2 block header with the L1 block
-// that contains the output proposal for the L2 root.
-func (db *blocksDB) MarkFinalizedL1RootForL2Block(l2Root, l1Root common.Hash) error {
-	var l2Header L2BlockHeader
-	l2Header.Hash = l2Root // set the primary key
+// Reorgs
 
-	result := db.gorm.First(&l2Header)
-	if result.Error != nil {
-		return result.Error
+func (db *blocksDB) DeleteReorgedState(timestamp uint64) error {
+	db.log.Info("deleting reorg'd state", "from_timestamp", timestamp)
+
+	// Delete reorg'd state. Block deletes cascades to all tables
+	l1Result := db.gorm.Delete(&L1BlockHeader{}, "timestamp >= ?", timestamp)
+	if l1Result.Error != nil {
+		return fmt.Errorf("unable to delete l1 state: %w", l1Result.Error)
 	}
+	db.log.Info("L1 blocks (& derived events/tables) deleted", "block_count", l1Result.RowsAffected)
 
-	l2Header.L1BlockHash = &l1Root
-	result = db.gorm.Save(&l2Header)
-	return result.Error
+	l2Result := db.gorm.Delete(&L2BlockHeader{}, "timestamp >= ?", timestamp)
+	if l2Result.Error != nil {
+		return fmt.Errorf("unable to delete l2 state: %w", l2Result.Error)
+	}
+	db.log.Info("L2 blocks (& derived events/tables) deleted", "block_count", l2Result.RowsAffected)
+
+	return nil
 }

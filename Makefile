@@ -1,6 +1,10 @@
 COMPOSEFLAGS=-d
 ITESTS_L2_HOST=http://localhost:9545
 BEDROCK_TAGS_REMOTE?=origin
+OP_STACK_GO_BUILDER?=us-docker.pkg.dev/oplabs-tools-artifacts/images/op-stack-go:latest
+
+# Requires at least Python v3.9; specify a minor version below if needed
+PYTHON?=python3
 
 build: build-go build-ts
 .PHONY: build
@@ -8,20 +12,46 @@ build: build-go build-ts
 build-go: submodules op-node op-proposer op-batcher
 .PHONY: build-go
 
+lint-go:
+	golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint --timeout 5m -e "errors.As" -e "errors.Is" ./...
+.PHONY: lint-go
+
 build-ts: submodules
 	if [ -n "$$NVM_DIR" ]; then \
 		. $$NVM_DIR/nvm.sh && nvm use; \
 	fi
-	yarn install
-	yarn build
+	pnpm install:ci
+	pnpm prepare
+	pnpm build
 .PHONY: build-ts
 
+ci-builder:
+	docker build -t ci-builder -f ops/docker/ci-builder/Dockerfile .
+.PHONY: ci-builder
+
+golang-docker:
+	# We don't use a buildx builder here, and just load directly into regular docker, for convenience.
+	GIT_COMMIT=$$(git rev-parse HEAD) \
+	GIT_DATE=$$(git show -s --format='%ct') \
+	IMAGE_TAGS=$$(git rev-parse HEAD),latest \
+	docker buildx bake \
+			--progress plain \
+			--load \
+			-f docker-bake.hcl \
+			op-node op-batcher op-proposer op-challenger
+.PHONY: golang-docker
+
+contracts-bedrock-docker:
+	IMAGE_TAGS=$$(git rev-parse HEAD),latest \
+	docker buildx bake \
+			--progress plain \
+			--load \
+			-f docker-bake.hcl \
+		  contracts-bedrock
+.PHONY: contracts-bedrock-docker
+
 submodules:
-	# CI will checkout submodules on its own (and fails on these commands)
-	if [ -z "$$GITHUB_ENV" ]; then \
-		git submodule init; \
-		git submodule update; \
-	fi
+	git submodule update --init --recursive
 .PHONY: submodules
 
 op-bindings:
@@ -52,9 +82,27 @@ op-challenger:
 	make -C ./op-challenger op-challenger
 .PHONY: op-challenger
 
+op-dispute-mon:
+	make -C ./op-dispute-mon op-dispute-mon
+.PHONY: op-dispute-mon
+
 op-program:
 	make -C ./op-program op-program
 .PHONY: op-program
+
+cannon:
+	make -C ./cannon cannon
+.PHONY: cannon
+
+reproducible-prestate:
+	make -C ./op-program reproducible-prestate
+.PHONY: reproducible-prestate
+
+cannon-prestate: op-program cannon
+	#./cannon/bin/cannon load-elf --path op-program/bin/op-program-client.elf --out op-program/bin/prestate.json --meta op-program/bin/meta.json
+	#./cannon/bin/cannon run --proof-at '=0' --stop-at '=1' --input op-program/bin/prestate.json --meta op-program/bin/meta.json --proof-fmt 'op-program/bin/%d.json' --output ""
+	#mv op-program/bin/0.json op-program/bin/prestate-proof.json
+.PHONY: cannon-prestate
 
 mod-tidy:
 	# Below GOPRIVATE line allows mod-tidy to be run immediately after
@@ -63,6 +111,7 @@ mod-tidy:
 	#
 	# See https://proxy.golang.org/ for more info.
 	export GOPRIVATE="github.com/ethereum-optimism" && go mod tidy
+	make -C ./op-ufm mod-tidy
 .PHONY: mod-tidy
 
 clean:
@@ -73,37 +122,56 @@ nuke: clean devnet-clean
 	git clean -Xdf
 .PHONY: nuke
 
-devnet-up:
-	PYTHONPATH=./bedrock-devnet python3 ./bedrock-devnet/main.py --monorepo-dir=.
+pre-devnet: submodules
+	@if ! [ -x "$(command -v geth)" ]; then \
+		make install-geth; \
+	fi
+	@if [ ! -e op-program/bin ]; then \
+		make cannon-prestate; \
+	fi
+	pip3 install python-dotenv requests
+.PHONY: pre-devnet
+
+devnet-up: pre-devnet
+	PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/main.py --monorepo-dir=.
 .PHONY: devnet-up
 
-devnet-up-deploy:
-	pip3 install python-dotenv requests
-	PYTHONPATH=./bedrock-devnet python3 ./bedrock-devnet/main.py --monorepo-dir=. --deploy
-.PHONY: devnet-up-deploy
+devnet-init: pre-devnet
+	PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/main.py --monorepo-dir=. --init
+.PHONY: devnet-init
+
+devnet-test: pre-devnet
+	PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/main.py --monorepo-dir=. --test
+.PHONY: devnet-test
 
 devnet-down:
-	@(cd ./ops-bedrock && GENESIS_TIMESTAMP=$(shell date +%s) docker-compose stop)
+	@(cd ./ops-bedrock && GENESIS_TIMESTAMP=$(shell date +%s) docker compose stop)
+	if [ -f "./.devnet/node-deploy/start_cluster.sh" ]; then ./.devnet/node-deploy/start_cluster.sh stop; fi
 .PHONY: devnet-down
 
 devnet-clean:
+	if [ -f "./.devnet/node-deploy/start_cluster.sh" ]; then ./.devnet/node-deploy/start_cluster.sh stop; fi
 	rm -rf ./packages/contracts-bedrock/deployments/devnetL1
 	rm -rf ./.devnet
-	cd ./ops-bedrock && docker-compose down
+	cd ./ops-bedrock && docker compose down
 	docker image ls 'ops-bedrock*' --format='{{.Repository}}' | xargs -r docker rmi
 	docker volume ls --filter name=ops-bedrock --format='{{.Name}}' | xargs -r docker volume rm
 .PHONY: devnet-clean
 
+devnet-allocs: pre-devnet
+	PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/main.py --monorepo-dir=. --allocs
+.PHONY: devnet-allocs
+
 devnet-logs:
-	@(cd ./ops-bedrock && docker-compose logs -f)
-	.PHONY: devnet-logs
+	@(cd ./ops-bedrock && docker compose logs -f)
+.PHONY: devnet-logs
 
 test-unit:
 	make -C ./op-node test
 	make -C ./op-proposer test
 	make -C ./op-batcher test
 	make -C ./op-e2e test
-	yarn test
+	pnpm test
 .PHONY: test-unit
 
 test-integration:
@@ -120,7 +188,7 @@ semgrep:
 clean-node-modules:
 	rm -rf node_modules
 	rm -rf packages/**/node_modules
-
+.PHONY: clean-node-modules
 
 tag-bedrock-go-modules:
 	./ops/scripts/tag-bedrock-go-modules.sh $(BEDROCK_TAGS_REMOTE) $(VERSION)
@@ -131,4 +199,15 @@ update-op-geth:
 .PHONY: update-op-geth
 
 bedrock-markdown-links:
-	docker run --init -it -v `pwd`:/input lycheeverse/lychee --verbose --no-progress --exclude-loopback --exclude twitter.com --exclude explorer.optimism.io --exclude-mail /input/README.md "/input/specs/**/*.md"
+	docker run --init -it -v `pwd`:/input lycheeverse/lychee --verbose --no-progress --exclude-loopback \
+		--exclude twitter.com --exclude explorer.optimism.io --exclude linux-mips.org --exclude vitalik.ca \
+		--exclude-mail /input/README.md "/input/specs/**/*.md"
+.PHONY: bedrock-markdown-links
+
+install-geth:
+	./ops/scripts/geth-version-checker.sh && \
+	 	(echo "Geth versions match, not installing geth..."; true) || \
+ 		(echo "Versions do not match, installing geth!"; \
+ 			go install -v github.com/ethereum/go-ethereum/cmd/geth@$(shell jq -r .geth < versions.json); \
+ 			echo "Installed geth!"; true)
+.PHONY: install-geth

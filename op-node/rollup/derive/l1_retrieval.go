@@ -2,16 +2,17 @@ package derive
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/ethereum-optimism/optimism/op-node/eth"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
 type DataAvailabilitySource interface {
-	OpenData(ctx context.Context, id eth.BlockID, batcherAddr common.Address) DataIter
+	OpenData(ctx context.Context, ref eth.L1BlockRef, batcherAddr common.Address) (DataIter, error)
 }
 
 type NextBlockProvider interface {
@@ -28,7 +29,7 @@ type L1Retrieval struct {
 	datas DataIter
 }
 
-var _ ResetableStage = (*L1Retrieval)(nil)
+var _ ResettableStage = (*L1Retrieval)(nil)
 
 func NewL1Retrieval(log log.Logger, dataSrc DataAvailabilitySource, prev NextBlockProvider) *L1Retrieval {
 	return &L1Retrieval{
@@ -53,7 +54,9 @@ func (l1r *L1Retrieval) NextData(ctx context.Context) ([]byte, error) {
 		} else if err != nil {
 			return nil, err
 		}
-		l1r.datas = l1r.dataSrc.OpenData(ctx, next.ID(), l1r.prev.SystemConfig().BatcherAddr)
+		if l1r.datas, err = l1r.dataSrc.OpenData(ctx, next, l1r.prev.SystemConfig().BatcherAddr); err != nil {
+			return nil, fmt.Errorf("failed to open data source: %w", err)
+		}
 	}
 
 	l1r.log.Debug("fetching next piece of data")
@@ -69,11 +72,14 @@ func (l1r *L1Retrieval) NextData(ctx context.Context) ([]byte, error) {
 	}
 }
 
-// ResetStep re-initializes the L1 Retrieval stage to block of it's `next` progress.
-// Note that we open up the `l1r.datas` here because it is requires to maintain the
+// Reset re-initializes the L1 Retrieval stage to block of it's `next` progress.
+// Note that we open up the `l1r.datas` here because it is required to maintain the
 // internal invariants that later propagate up the derivation pipeline.
 func (l1r *L1Retrieval) Reset(ctx context.Context, base eth.L1BlockRef, sysCfg eth.SystemConfig) error {
-	l1r.datas = l1r.dataSrc.OpenData(ctx, base.ID(), sysCfg.BatcherAddr)
+	var err error
+	if l1r.datas, err = l1r.dataSrc.OpenData(ctx, base, sysCfg.BatcherAddr); err != nil {
+		return fmt.Errorf("failed to open data source: %w", err)
+	}
 	l1r.log.Info("Reset of L1Retrieval done", "origin", base)
 	return io.EOF
 }

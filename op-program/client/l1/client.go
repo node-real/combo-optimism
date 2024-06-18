@@ -5,8 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ethereum-optimism/optimism/op-node/eth"
 	"github.com/ethereum/go-ethereum"
+
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -76,6 +77,10 @@ func (o *OracleL1Client) FetchReceipts(ctx context.Context, blockHash common.Has
 	return info, rcpts, nil
 }
 
+func (o *OracleL1Client) PreFetchReceipts(ctx context.Context, blockHash common.Hash) (bool, error) {
+	return false, nil
+}
+
 func (o *OracleL1Client) InfoAndTxsByHash(ctx context.Context, hash common.Hash) (eth.BlockInfo, types.Transactions, error) {
 	info, txs := o.oracle.TransactionsByBlockHash(hash)
 	return info, txs, nil
@@ -83,4 +88,8 @@ func (o *OracleL1Client) InfoAndTxsByHash(ctx context.Context, hash common.Hash)
 
 func (o *OracleL1Client) GoOrUpdatePreFetchReceipts(ctx context.Context, l1StartBlock uint64) error {
 	return o.oracle.GoOrUpdatePreFetchReceipts(ctx, l1StartBlock)
+}
+
+func (o *OracleL1Client) ClearReceiptsCacheBefore(blockNumber uint64) {
+	//do nothing
 }

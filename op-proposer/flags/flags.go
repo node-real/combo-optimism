@@ -4,47 +4,73 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 
 	opservice "github.com/ethereum-optimism/optimism/op-service"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
-	oppprof "github.com/ethereum-optimism/optimism/op-service/pprof"
+	"github.com/ethereum-optimism/optimism/op-service/oppprof"
 	oprpc "github.com/ethereum-optimism/optimism/op-service/rpc"
 	"github.com/ethereum-optimism/optimism/op-service/txmgr"
 )
 
 const EnvVarPrefix = "OP_PROPOSER"
 
+func prefixEnvVars(name string) []string {
+	return opservice.PrefixEnvVar(EnvVarPrefix, name)
+}
+
 var (
 	// Required Flags
-	L1EthRpcFlag = cli.StringFlag{
-		Name:   "l1-eth-rpc",
-		Usage:  "HTTP provider URL for L1. Multiple alternative addresses are supported, separated by commas, and the first address is used by default",
-		EnvVar: opservice.PrefixEnvVar(EnvVarPrefix, "L1_ETH_RPC"),
+	L1EthRpcFlag = &cli.StringFlag{
+		Name:    "l1-eth-rpc",
+		Usage:   "HTTP provider URL for L1. Multiple alternative addresses are supported, separated by commas, and the first address is used by default",
+		EnvVars: prefixEnvVars("L1_ETH_RPC"),
 	}
-	RollupRpcFlag = cli.StringFlag{
-		Name:   "rollup-rpc",
-		Usage:  "HTTP provider URL for the rollup node",
-		EnvVar: opservice.PrefixEnvVar(EnvVarPrefix, "ROLLUP_RPC"),
-	}
-	L2OOAddressFlag = cli.StringFlag{
-		Name:   "l2oo-address",
-		Usage:  "Address of the L2OutputOracle contract",
-		EnvVar: opservice.PrefixEnvVar(EnvVarPrefix, "L2OO_ADDRESS"),
+	RollupRpcFlag = &cli.StringFlag{
+		Name:    "rollup-rpc",
+		Usage:   "HTTP provider URL for the rollup node. A comma-separated list enables the active rollup provider.",
+		EnvVars: prefixEnvVars("ROLLUP_RPC"),
 	}
 
 	// Optional flags
-	PollIntervalFlag = cli.DurationFlag{
-		Name:   "poll-interval",
-		Usage:  "How frequently to poll L2 for new blocks",
-		Value:  6 * time.Second,
-		EnvVar: opservice.PrefixEnvVar(EnvVarPrefix, "POLL_INTERVAL"),
+	L2OOAddressFlag = &cli.StringFlag{
+		Name:    "l2oo-address",
+		Usage:   "Address of the L2OutputOracle contract",
+		EnvVars: prefixEnvVars("L2OO_ADDRESS"),
 	}
-	AllowNonFinalizedFlag = cli.BoolFlag{
-		Name:   "allow-non-finalized",
-		Usage:  "Allow the proposer to submit proposals for L2 blocks derived from non-finalized L1 blocks.",
-		EnvVar: opservice.PrefixEnvVar(EnvVarPrefix, "ALLOW_NON_FINALIZED"),
+	PollIntervalFlag = &cli.DurationFlag{
+		Name:    "poll-interval",
+		Usage:   "How frequently to poll L2 for new blocks",
+		Value:   6 * time.Second,
+		EnvVars: prefixEnvVars("POLL_INTERVAL"),
+	}
+	AllowNonFinalizedFlag = &cli.BoolFlag{
+		Name:    "allow-non-finalized",
+		Usage:   "Allow the proposer to submit proposals for L2 blocks derived from non-finalized L1 blocks.",
+		EnvVars: prefixEnvVars("ALLOW_NON_FINALIZED"),
+	}
+	DisputeGameFactoryAddressFlag = &cli.StringFlag{
+		Name:    "game-factory-address",
+		Usage:   "Address of the DisputeGameFactory contract",
+		EnvVars: prefixEnvVars("GAME_FACTORY_ADDRESS"),
+	}
+	ProposalIntervalFlag = &cli.DurationFlag{
+		Name:    "proposal-interval",
+		Usage:   "Interval between submitting L2 output proposals when the dispute game factory address is set",
+		EnvVars: prefixEnvVars("PROPOSAL_INTERVAL"),
+	}
+	DisputeGameTypeFlag = &cli.UintFlag{
+		Name:    "game-type",
+		Usage:   "Dispute game type to create via the configured DisputeGameFactory",
+		Value:   0,
+		EnvVars: prefixEnvVars("GAME_TYPE"),
+	}
+	ActiveSequencerCheckDurationFlag = &cli.DurationFlag{
+		Name:    "active-sequencer-check-duration",
+		Usage:   "The duration between checks to determine the active sequencer endpoint.",
+		Value:   2 * time.Minute,
+		EnvVars: prefixEnvVars("ACTIVE_SEQUENCER_CHECK_DURATION"),
 	}
 	// Legacy Flags
 	L2OutputHDPathFlag = txmgr.L2OutputHDPathFlag
@@ -53,13 +79,17 @@ var (
 var requiredFlags = []cli.Flag{
 	L1EthRpcFlag,
 	RollupRpcFlag,
-	L2OOAddressFlag,
 }
 
 var optionalFlags = []cli.Flag{
+	L2OOAddressFlag,
 	PollIntervalFlag,
 	AllowNonFinalizedFlag,
 	L2OutputHDPathFlag,
+	DisputeGameFactoryAddressFlag,
+	ProposalIntervalFlag,
+	DisputeGameTypeFlag,
+	ActiveSequencerCheckDurationFlag,
 }
 
 func init() {
@@ -77,8 +107,8 @@ var Flags []cli.Flag
 
 func CheckRequired(ctx *cli.Context) error {
 	for _, f := range requiredFlags {
-		if !ctx.GlobalIsSet(f.GetName()) {
-			return fmt.Errorf("flag %s is required", f.GetName())
+		if !ctx.IsSet(f.Names()[0]) {
+			return fmt.Errorf("flag %s is required", f.Names()[0])
 		}
 	}
 	return nil

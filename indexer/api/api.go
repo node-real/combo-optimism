@@ -1,110 +1,185 @@
 package api
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
+	"fmt"
+	"net"
 	"net/http"
+	"strconv"
+	"sync/atomic"
+	"time"
 
-	"github.com/ethereum-optimism/optimism/indexer/database"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/ethereum/go-ethereum/log"
+
+	"github.com/ethereum-optimism/optimism/indexer/api/routes"
+	"github.com/ethereum-optimism/optimism/indexer/api/service"
+	"github.com/ethereum-optimism/optimism/indexer/config"
+	"github.com/ethereum-optimism/optimism/indexer/database"
+	"github.com/ethereum-optimism/optimism/op-service/httputil"
+	"github.com/ethereum-optimism/optimism/op-service/metrics"
 )
 
-type PaginationResponse struct {
-	// TODO type this better
-	Data        interface{} `json:"data"`
-	Cursor      string      `json:"cursor"`
-	HasNextPage bool        `json:"hasNextPage"`
+const ethereumAddressRegex = `^0x[a-fA-F0-9]{40}$`
+
+const (
+	MetricsNamespace = "op_indexer_api"
+	addressParam     = "{address:%s}"
+
+	// Endpoint paths
+	DocsPath        = "/docs"
+	HealthPath      = "/healthz"
+	DepositsPath    = "/api/v0/deposits/"
+	WithdrawalsPath = "/api/v0/withdrawals/"
+
+	SupplyPath = "/api/v0/supply"
+)
+
+// Api ... Indexer API struct
+// TODO : Structured error responses
+type APIService struct {
+	log    log.Logger
+	router *chi.Mux
+
+	bv      database.BridgeTransfersView
+	dbClose func() error
+
+	metricsRegistry *prometheus.Registry
+
+	apiServer     *httputil.HTTPServer
+	metricsServer *httputil.HTTPServer
+
+	stopped atomic.Bool
 }
 
-func (a *Api) DepositsHandler(w http.ResponseWriter, r *http.Request) {
-	bv := a.bridgeView
+// chiMetricsMiddleware ... Injects a metrics recorder into request processing middleware
+func chiMetricsMiddleware(rec metrics.HTTPRecorder) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return metrics.NewHTTPRecordingMiddleware(rec, next)
+	}
+}
 
-	address := common.HexToAddress(chi.URLParam(r, "address"))
+// NewApi ... Construct a new api instance
+func NewApi(ctx context.Context, log log.Logger, cfg *Config) (*APIService, error) {
+	out := &APIService{log: log, metricsRegistry: metrics.NewRegistry()}
+	if err := out.initFromConfig(ctx, cfg); err != nil {
+		return nil, errors.Join(err, out.Stop(ctx)) // close any resources we may have opened already
+	}
+	return out, nil
+}
 
-	// limit := getIntFromQuery(r, "limit", 10)
-	// cursor := r.URL.Query().Get("cursor")
-	// sortDirection := r.URL.Query().Get("sortDirection")
+func (a *APIService) initFromConfig(ctx context.Context, cfg *Config) error {
+	if err := a.initDB(ctx, cfg.DB); err != nil {
+		return fmt.Errorf("failed to init DB: %w", err)
+	}
+	if err := a.startMetricsServer(cfg.MetricsServer); err != nil {
+		return fmt.Errorf("failed to start metrics server: %w", err)
+	}
+	a.initRouter(cfg.HTTPServer)
+	if err := a.startServer(cfg.HTTPServer); err != nil {
+		return fmt.Errorf("failed to start API server: %w", err)
+	}
+	return nil
+}
 
-	deposits, err := bv.DepositsByAddress(address)
+func (a *APIService) Start(ctx context.Context) error {
+	// Completed all setup-up jobs at init-time already,
+	// and the API service does not have any other special starting routines or background-jobs to start.
+	return nil
+}
 
+func (a *APIService) Stop(ctx context.Context) error {
+	var result error
+	if a.apiServer != nil {
+		if err := a.apiServer.Stop(ctx); err != nil {
+			result = errors.Join(result, fmt.Errorf("failed to stop API server: %w", err))
+		}
+	}
+	if a.metricsServer != nil {
+		if err := a.metricsServer.Stop(ctx); err != nil {
+			result = errors.Join(result, fmt.Errorf("failed to stop metrics server: %w", err))
+		}
+	}
+	if a.dbClose != nil {
+		if err := a.dbClose(); err != nil {
+			result = errors.Join(result, fmt.Errorf("failed to close DB: %w", err))
+		}
+	}
+	a.stopped.Store(true)
+	a.log.Info("API service shutdown complete")
+	return result
+}
+
+func (a *APIService) Stopped() bool {
+	return a.stopped.Load()
+}
+
+// Addr ... returns the address that the HTTP server is listening on (excl. http:// prefix, just the host and port)
+func (a *APIService) Addr() string {
+	if a.apiServer == nil {
+		return ""
+	}
+	return a.apiServer.Addr().String()
+}
+
+func (a *APIService) initDB(ctx context.Context, connector DBConnector) error {
+	db, err := connector.OpenDB(ctx, a.log)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return fmt.Errorf("failed to connect to database: %w", err)
 	}
-
-	// This is not the shape of the response we want!!!
-	// will add in the individual features in future prs 1 by 1
-	response := PaginationResponse{
-		Data: deposits,
-		// Cursor:      nextCursor,
-		HasNextPage: false,
-	}
-
-	jsonResponse(w, response, http.StatusOK)
+	a.dbClose = db.Closer
+	a.bv = db.BridgeTransfers
+	return nil
 }
 
-func (a *Api) WithdrawalsHandler(w http.ResponseWriter, r *http.Request) {
-	bv := a.bridgeView
+func (a *APIService) initRouter(apiConfig config.ServerConfig) {
+	v := new(service.Validator)
 
-	address := common.HexToAddress(chi.URLParam(r, "address"))
+	svc := service.New(v, a.bv, a.log)
+	apiRouter := chi.NewRouter()
+	h := routes.NewRoutes(a.log, apiRouter, svc)
 
-	// limit := getIntFromQuery(r, "limit", 10)
-	// cursor := r.URL.Query().Get("cursor")
-	// sortDirection := r.URL.Query().Get("sortDirection")
+	apiRouter.Use(middleware.Logger)
+	apiRouter.Use(middleware.Timeout(time.Duration(apiConfig.WriteTimeout) * time.Second))
+	apiRouter.Use(middleware.Recoverer)
+	apiRouter.Use(middleware.Heartbeat(HealthPath))
+	apiRouter.Use(chiMetricsMiddleware(metrics.NewPromHTTPRecorder(a.metricsRegistry, MetricsNamespace)))
 
-	withdrawals, err := bv.WithdrawalsByAddress(address)
+	apiRouter.Get(fmt.Sprintf(DepositsPath+addressParam, ethereumAddressRegex), h.L1DepositsHandler)
+	apiRouter.Get(fmt.Sprintf(WithdrawalsPath+addressParam, ethereumAddressRegex), h.L2WithdrawalsHandler)
+	apiRouter.Get(SupplyPath, h.SupplyView)
+	apiRouter.Get(DocsPath, h.DocsHandler)
+	a.router = apiRouter
+}
 
+// startServer ... Starts the API server
+func (a *APIService) startServer(serverConfig config.ServerConfig) error {
+	a.log.Debug("API server listening...", "port", serverConfig.Port)
+
+	addr := net.JoinHostPort(serverConfig.Host, strconv.Itoa(serverConfig.Port))
+	srv, err := httputil.StartHTTPServer(addr, a.router)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return fmt.Errorf("failed to start API server: %w", err)
 	}
 
-	// This is not the shape of the response we want!!!
-	// will add in the individual features in future prs 1 by 1
-	response := PaginationResponse{
-		Data: withdrawals,
-		// Cursor:      nextCursor,
-		HasNextPage: false,
+	a.log.Info("API server started", "addr", srv.Addr().String())
+	a.apiServer = srv
+	return nil
+}
+
+// startMetricsServer ... Starts the metrics server
+func (a *APIService) startMetricsServer(metricsConfig config.ServerConfig) error {
+	a.log.Debug("starting metrics server...", "port", metricsConfig.Port)
+	srv, err := metrics.StartServer(a.metricsRegistry, metricsConfig.Host, metricsConfig.Port)
+	if err != nil {
+		return fmt.Errorf("failed to start metrics server: %w", err)
 	}
-
-	jsonResponse(w, response, http.StatusOK)
-}
-
-func (a *Api) HealthzHandler(w http.ResponseWriter, r *http.Request) {
-	jsonResponse(w, "ok", http.StatusOK)
-}
-
-func jsonResponse(w http.ResponseWriter, data interface{}, statusCode int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-type Api struct {
-	Router     *chi.Mux
-	bridgeView database.BridgeView
-}
-
-func NewApi(bv database.BridgeView) *Api {
-	r := chi.NewRouter()
-
-	api := &Api{
-		Router:     r,
-		bridgeView: bv,
-	}
-	// these regex are .+ because I wasn't sure what they should be
-	// don't want a regex for addresses because would prefer to validate the address
-	// with go-ethereum and throw a friendly error message
-	r.Get("/api/v0/deposits/{address:.+}", api.DepositsHandler)
-	r.Get("/api/v0/withdrawals/{address:.+}", api.WithdrawalsHandler)
-	r.Get("/healthz", api.HealthzHandler)
-
-	return api
-
-}
-
-func (a *Api) Listen(port string) error {
-	return http.ListenAndServe(port, a.Router)
+	a.log.Info("Metrics server started", "addr", srv.Addr().String())
+	a.metricsServer = srv
+	return nil
 }

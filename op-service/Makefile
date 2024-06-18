@@ -1,13 +1,19 @@
 test:
 	go test -v ./...
 
-lint:
-	golangci-lint run -E goimports,sqlclosecheck,bodyclose,asciicheck,misspell,errorlint -e "errors.As" -e "errors.Is" ./...
-
 generate-mocks:
 	go generate ./...
 
+fuzz:
+	go test -run NOTAREALTEST -v -fuzztime 10s -fuzz FuzzExecutionPayloadUnmarshal ./eth
+	go test -run NOTAREALTEST -v -fuzztime 10s -fuzz FuzzExecutionPayloadMarshalUnmarshalV1 ./eth
+	go test -run NOTAREALTEST -v -fuzztime 10s -fuzz FuzzExecutionPayloadMarshalUnmarshalV2 ./eth
+	go test -run NOTAREALTEST -v -fuzztime 10s -fuzz FuzzExecutionPayloadMarshalUnmarshalV3 ./eth
+	go test -run NOTAREALTEST -v -fuzztime 10s -fuzz FuzzOBP01 ./eth
+	go test -run NOTAREALTEST -v -fuzztime 10s -fuzz FuzzEncodeDecodeBlob ./eth
+	go test -run NOTAREALTEST -v -fuzztime 10s -fuzz FuzzDetectNonBijectivity ./eth
+
 .PHONY: \
 	test \
-	lint \
-	generate-mocks
+	generate-mocks \
+	fuzz
