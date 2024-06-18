@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
-var Mainnet, Sepolia *rollup.Config
+var Mainnet, Goerli, Sepolia *rollup.Config
 
 func init() {
 	mustCfg := func(name string) *rollup.Config {
@@ -23,6 +23,7 @@ func init() {
 		return cfg
 	}
 	Mainnet = mustCfg("op-mainnet")
+	Goerli = mustCfg("op-goerli")
 	Sepolia = mustCfg("op-sepolia")
 }
 
@@ -45,6 +46,8 @@ func AvailableNetworks() []string {
 
 func handleLegacyName(name string) string {
 	switch name {
+	case "goerli":
+		return "op-goerli"
 	case "mainnet":
 		return "op-mainnet"
 	case "sepolia":
@@ -83,12 +86,16 @@ var NetworksByName = map[string]rollup.Config{
 	"opBNBMainnet": OPBNBMainnet,
 	"opBNBTestnet": OPBNBTestnet,
 	"opBNBQANet":   OPBNBQANet,
+	"comboMainnet": ComboMainnet,
+	"comboTestnet": ComboTestnet,
 }
 
 var NetworksByChainId = map[string]rollup.Config{
 	"204":  OPBNBMainnet,
 	"5611": OPBNBTestnet,
-	"1081": OPBNBQANet,
+	"2484": OPBNBQANet,
+	"9980": ComboMainnet,
+	"1715": ComboTestnet,
 }
 
 func GetRollupConfigByNetwork(name string) (rollup.Config, error) {
@@ -184,16 +191,16 @@ var OPBNBTestnet = rollup.Config{
 var OPBNBQANet = rollup.Config{
 	Genesis: rollup.Genesis{
 		L1: eth.BlockID{
-			Hash:   common.HexToHash("0xdbbbe8b752ef975c4a0592472de646bc683b66c824dfedf5d12ecdcc97a5d0c9"),
-			Number: 3311074,
+			Hash:   common.HexToHash("0xd8b84c6811ad3eb68ad578e12312f797d84c59a97993a1f230409c1644fcb3d2"),
+			Number: 373422,
 		},
 		L2: eth.BlockID{
-			Hash:   common.HexToHash("0x73eaf214333f29eed23c4902fdc17889b3e379372e52a42567d0069e1b10cdb0"),
+			Hash:   common.HexToHash("0xe182e685b1ec05ca55f2374cb3a190d1ae8f3e196acb55a69efd61536fc3983f"),
 			Number: 0,
 		},
-		L2Time: 1723613564,
+		L2Time: 1714291718,
 		SystemConfig: eth.SystemConfig{
-			BatcherAddr: common.HexToAddress("0xb3ad01bd1183bb8537f3e48c42889d828a89b55f"),
+			BatcherAddr: common.HexToAddress("0xbd6353a2e43a0d8eaa370b2eceb80481bc5c4094"),
 			Overhead:    eth.Bytes32(common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000834")),
 			Scalar:      eth.Bytes32(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000000f4240")),
 			GasLimit:    100000000,
@@ -204,17 +211,86 @@ var OPBNBQANet = rollup.Config{
 	SeqWindowSize:          14400,
 	ChannelTimeout:         1200,
 	L1ChainID:              big.NewInt(714),
-	L2ChainID:              big.NewInt(1081),
-	BatchInboxAddress:      common.HexToAddress("0xff00000000000000000000000000000000001081"),
-	DepositContractAddress: common.HexToAddress("0xbf33e25ac03e99dcbc63998471527f23dfbf811f"),
-	L1SystemConfigAddress:  common.HexToAddress("0x644daa12057118ce60d25a9ba707f571658911ae"),
+	L2ChainID:              big.NewInt(2484),
+	BatchInboxAddress:      common.HexToAddress("0xff00000000000000000000000000000000001484"),
+	DepositContractAddress: common.HexToAddress("0xb22e158785dbfb055edddb24ad97b4e7c51a6624"),
+	L1SystemConfigAddress:  common.HexToAddress("0xbf05c7e8ac1bd5ed042618762a7442f726ecae0b"),
 	RegolithTime:           u64Ptr(0),
 	Fermat:                 big.NewInt(0),
-	SnowTime:               u64Ptr(0),
-	CanyonTime:             u64Ptr(0),
-	DeltaTime:              u64Ptr(0),
-	EcotoneTime:            u64Ptr(0),
-	FjordTime:              u64Ptr(1724392800), // AUG-23-2024 06:00 AM +UTC
+	SnowTime:               u64Ptr(1714993200), // May-06-2024 11:00 AM +UTC
+	CanyonTime:             u64Ptr(1714993800), // May-06-2024 11:10 AM +UTC
+	DeltaTime:              u64Ptr(1714994400), // May-06-2024 11:20 AM +UTC
+	EcotoneTime:            u64Ptr(1714995000), // May-06-2024 11:30 AM +UTC
+}
+
+var ComboMainnet = rollup.Config{
+	Genesis: rollup.Genesis{
+		L1: eth.BlockID{
+			Hash:   common.HexToHash("0x7743484e78e047654f5a92c5d66a25828f1c259b2c9a780a39936c001fdcbcf7"),
+			Number: 33768568,
+		},
+		L2: eth.BlockID{
+			Hash:   common.HexToHash("0x92fcf9e91a4cdd7ffc7e67207e77dfba049bacf1ede5c5917a40f9537e05f4bc"),
+			Number: 0,
+		},
+		L2Time: 1700817067,
+		SystemConfig: eth.SystemConfig{
+			BatcherAddr: common.HexToAddress("0x6df30535bbe94a533d9f1600e69a642abb3e063f"),
+			Overhead:    eth.Bytes32(common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000834")),
+			Scalar:      eth.Bytes32(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000000f4240")),
+			GasLimit:    100000000,
+		},
+	},
+	BlockTime:              1,
+	MaxSequencerDrift:      600,
+	SeqWindowSize:          14400,
+	ChannelTimeout:         1200,
+	L1ChainID:              big.NewInt(56),
+	L2ChainID:              big.NewInt(9980),
+	BatchInboxAddress:      common.HexToAddress("0xff00000000000000000000000000000000009980"),
+	DepositContractAddress: common.HexToAddress("0x419df125e0a712db4b10209ac3055b58b840f1f4"),
+	L1SystemConfigAddress:  common.HexToAddress("0x19d9791f6f5df45fb4ced2ea0904e48a6f9e545c"),
+	RegolithTime:           u64Ptr(0),
+	Fermat:                 big.NewInt(0),
+	SnowTime:               u64Ptr(1719813600), // July-01-2024 06:00 AM +UTC
+	CanyonTime:             u64Ptr(1719814200), // July-01-2024 06:10 AM +UTC
+	DeltaTime:              u64Ptr(1719814800), // July-01-2024 06:20 AM +UTC
+	EcotoneTime:            u64Ptr(1719815400), // July-01-2024 06:30 AM +UTC
+}
+
+var ComboTestnet = rollup.Config{
+	Genesis: rollup.Genesis{
+		L1: eth.BlockID{
+			Hash:   common.HexToHash("0x5c42e35d2cf086cdbf6ad194701a48688f3c1e8d2eecf57168a248e63a33be86"),
+			Number: 39570635,
+		},
+		L2: eth.BlockID{
+			Hash:   common.HexToHash("0x51d565869cb1c6d7e577848ccd1f93918b99427c1cc3fed9dca628d0cffcefbb"),
+			Number: 0,
+		},
+		L2Time: 1713424951,
+		SystemConfig: eth.SystemConfig{
+			BatcherAddr: common.HexToAddress("0x013fce36695321d32251e58bff33292c685da696"),
+			Overhead:    eth.Bytes32(common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000834")),
+			Scalar:      eth.Bytes32(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000000f4240")),
+			GasLimit:    100000000,
+		},
+	},
+	BlockTime:              1,
+	MaxSequencerDrift:      600,
+	SeqWindowSize:          14400,
+	ChannelTimeout:         1200,
+	L1ChainID:              big.NewInt(97),
+	L2ChainID:              big.NewInt(1715),
+	BatchInboxAddress:      common.HexToAddress("0xff00000000000000000000000000000000001715"),
+	DepositContractAddress: common.HexToAddress("0x6357aeea63f9bea16a9264fad26fdfddbec559e6"),
+	L1SystemConfigAddress:  common.HexToAddress("0x3a472819b60885f1f11ee173f56e43961460c391"),
+	RegolithTime:           u64Ptr(0),
+	Fermat:                 big.NewInt(0),
+	SnowTime:               u64Ptr(1719208800), // June-24-2024 06:00 AM +UTC
+	CanyonTime:             u64Ptr(1719209400), // June-24-2024 06:10 AM +UTC
+	DeltaTime:              u64Ptr(1719210000), // June-24-2024 06:20 AM +UTC
+	EcotoneTime:            u64Ptr(1719210600), // June-24-2024 06:30 AM +UTC
 }
 
 func u64Ptr(v uint64) *uint64 {
