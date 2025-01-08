@@ -4,12 +4,6 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum-optimism/optimism/op-chain-ops/genesis"
-	"github.com/ethereum-optimism/optimism/op-program/client/l2/engineapi"
-	"github.com/ethereum-optimism/optimism/op-program/client/l2/engineapi/test"
-	l2test "github.com/ethereum-optimism/optimism/op-program/client/l2/test"
-	"github.com/ethereum-optimism/optimism/op-service/eth"
-	"github.com/ethereum-optimism/optimism/op-service/testlog"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
@@ -19,9 +13,16 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/trie"
-	"github.com/ethereum/go-ethereum/trie/triedb/hashdb"
+	"github.com/ethereum/go-ethereum/triedb"
+	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/ethereum-optimism/optimism/op-chain-ops/genesis"
+	"github.com/ethereum-optimism/optimism/op-program/client/l2/engineapi"
+	"github.com/ethereum-optimism/optimism/op-program/client/l2/engineapi/test"
+	l2test "github.com/ethereum-optimism/optimism/op-program/client/l2/test"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum-optimism/optimism/op-service/testlog"
 )
 
 var fundedKey, _ = crypto.GenerateKey()
@@ -301,7 +302,7 @@ func setupOracle(t *testing.T, blockCount int, headBlockNumber int, enableEcoton
 	chainCfg := l2Genesis.Config
 	consensus := beacon.New(nil)
 	db := rawdb.NewMemoryDatabase()
-	trieDB := trie.NewDatabase(db, &trie.Config{HashDB: hashdb.Defaults})
+	trieDB := triedb.NewDatabase(db, &triedb.Config{HashDB: hashdb.Defaults})
 
 	// Set minimal amount of stuff to avoid nil references later
 	genesisBlock := l2Genesis.MustCommit(db, trieDB)
