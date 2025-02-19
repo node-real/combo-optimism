@@ -3,14 +3,13 @@ package sources
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
@@ -64,9 +63,12 @@ type L1Client struct {
 	l1BlockRefsCache *caching.LRUCache[common.Hash, eth.L1BlockRef]
 
 	//ensure pre-fetch receipts only once
-	preFetchReceiptsOnce sync.Once
+	preFetchReceiptsOnce      sync.Once
+	isPreFetchReceiptsRunning atomic.Bool
 	//start block for pre-fetch receipts
 	preFetchReceiptsStartBlockChan chan uint64
+	preFetchReceiptsClosedChan     chan struct{}
+
 	//max concurrent requests
 	maxConcurrentRequests int
 	//done chan
@@ -85,6 +87,7 @@ func NewL1Client(client client.RPC, log log.Logger, metrics caching.Metrics, con
 		l1BlockRefsCache:               caching.NewLRUCache[common.Hash, eth.L1BlockRef](metrics, "blockrefs", config.L1BlockRefsCacheSize),
 		preFetchReceiptsOnce:           sync.Once{},
 		preFetchReceiptsStartBlockChan: make(chan uint64, 1),
+		preFetchReceiptsClosedChan:     make(chan struct{}),
 		maxConcurrentRequests:          config.MaxConcurrentRequests,
 		done:                           make(chan struct{}),
 	}, nil
@@ -142,6 +145,7 @@ func (s *L1Client) GoOrUpdatePreFetchReceipts(ctx context.Context, l1Start uint6
 	s.preFetchReceiptsStartBlockChan <- l1Start
 	s.preFetchReceiptsOnce.Do(func() {
 		s.log.Info("pre-fetching receipts start", "startBlock", l1Start)
+		s.isPreFetchReceiptsRunning.Store(true)
 		go func() {
 			var currentL1Block uint64
 			var parentHash common.Hash
@@ -149,6 +153,7 @@ func (s *L1Client) GoOrUpdatePreFetchReceipts(ctx context.Context, l1Start uint6
 				select {
 				case <-s.done:
 					s.log.Info("pre-fetching receipts done")
+					s.preFetchReceiptsClosedChan <- struct{}{}
 					return
 				case currentL1Block = <-s.preFetchReceiptsStartBlockChan:
 					s.log.Debug("pre-fetching receipts currentL1Block changed", "block", currentL1Block)
@@ -208,7 +213,10 @@ func (s *L1Client) GoOrUpdatePreFetchReceipts(ctx context.Context, l1Start uint6
 										continue
 									}
 									if !isSuccess {
-										s.log.Debug("pre fetch receipts fail without error,need retry", "blockHash", blockInfo.Hash, "blockNumber", blockNumber)
+										s.log.Debug("The receipts cache may be full. "+
+											"please ensure the maximum height difference between the L1 blocks "+
+											"corresponding to the unsafe block height and the safe block height is less than or equal to the cache size.",
+											"blockHash", blockInfo.Hash, "blockNumber", blockNumber)
 										time.Sleep(1 * time.Second)
 										continue
 									}
@@ -257,74 +265,10 @@ func (s *L1Client) ClearReceiptsCacheBefore(blockNumber uint64) {
 	s.recProvider.GetReceiptsCache().RemoveLessThan(blockNumber)
 }
 
-func (s *L1Client) GetBlobs(ctx context.Context, ref eth.L1BlockRef, hashes []eth.IndexedBlobHash) ([]*eth.Blob, error) {
-	if len(hashes) == 0 {
-		return []*eth.Blob{}, nil
-	}
-
-	blobSidecars, err := s.getBlobSidecars(ctx, ref)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get blob sidecars for L1BlockRef %s: %w", ref, err)
-	}
-
-	validatedBlobs, err := validateBlobSidecars(blobSidecars, ref)
-	if err != nil {
-		return nil, fmt.Errorf("failed to validate blob sidecars for L1BlockRef %s: %w", ref, err)
-	}
-
-	blobs := make([]*eth.Blob, len(hashes))
-	for i, indexedBlobHash := range hashes {
-		blob, ok := validatedBlobs[indexedBlobHash.Hash]
-		if !ok {
-			return nil, fmt.Errorf("blob sidecars fetched from rpc mismatched with expected hash %s for L1BlockRef %s", indexedBlobHash.Hash, ref)
-		}
-		blobs[i] = blob
-	}
-	return blobs, nil
-}
-
-func (s *L1Client) getBlobSidecars(ctx context.Context, ref eth.L1BlockRef) (eth.BSCBlobSidecars, error) {
-	var blobSidecars eth.BSCBlobSidecars
-	err := s.client.CallContext(ctx, &blobSidecars, "eth_getBlobSidecars", numberID(ref.Number).Arg())
-	if err != nil {
-		return nil, err
-	}
-	if blobSidecars == nil {
-		return nil, ethereum.NotFound
-	}
-	return blobSidecars, nil
-}
-
-func validateBlobSidecars(blobSidecars eth.BSCBlobSidecars, ref eth.L1BlockRef) (map[common.Hash]*eth.Blob, error) {
-	if len(blobSidecars) == 0 {
-		return nil, fmt.Errorf("invalidate api response, blob sidecars of block %s are empty", ref.Hash)
-	}
-	blobsMap := make(map[common.Hash]*eth.Blob)
-	for _, blobSidecar := range blobSidecars {
-		if blobSidecar.BlockNumber.ToInt().Cmp(big.NewInt(0).SetUint64(ref.Number)) != 0 {
-			return nil, fmt.Errorf("invalidate api response of tx %s, expect block number %d, got %d", blobSidecar.TxHash, ref.Number, blobSidecar.BlockNumber.ToInt().Uint64())
-		}
-		if blobSidecar.BlockHash.Cmp(ref.Hash) != 0 {
-			return nil, fmt.Errorf("invalidate api response of tx %s, expect block hash %s, got %s", blobSidecar.TxHash, ref.Hash, blobSidecar.BlockHash)
-		}
-		if len(blobSidecar.Blobs) == 0 || len(blobSidecar.Blobs) != len(blobSidecar.Commitments) || len(blobSidecar.Blobs) != len(blobSidecar.Proofs) {
-			return nil, fmt.Errorf("invalidate api response of tx %s,idx:%d, len of blobs(%d)/commitments(%d)/proofs(%d) is not equal or is 0", blobSidecar.TxHash, blobSidecar.TxIndex, len(blobSidecar.Blobs), len(blobSidecar.Commitments), len(blobSidecar.Proofs))
-		}
-
-		for i := 0; i < len(blobSidecar.Blobs); i++ {
-			// confirm blob data is valid by verifying its proof against the commitment
-			if err := eth.VerifyBlobProof(&blobSidecar.Blobs[i], kzg4844.Commitment(blobSidecar.Commitments[i]), kzg4844.Proof(blobSidecar.Proofs[i])); err != nil {
-				return nil, fmt.Errorf("blob of tx %s at index %d failed verification: %w", blobSidecar.TxHash, i, err)
-			}
-			// the blob's kzg commitment hashes
-			hash := eth.KZGToVersionedHash(kzg4844.Commitment(blobSidecar.Commitments[i]))
-			blobsMap[hash] = &blobSidecar.Blobs[i]
-		}
-	}
-	return blobsMap, nil
-}
-
 func (s *L1Client) Close() {
-	close(s.done)
+	if s.isPreFetchReceiptsRunning.Load() {
+		close(s.done)
+		<-s.preFetchReceiptsClosedChan
+	}
 	s.EthClient.Close()
 }

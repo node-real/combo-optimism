@@ -8,10 +8,9 @@ import (
 	"time"
 
 	opservice "github.com/ethereum-optimism/optimism/op-service"
-	"github.com/ethereum-optimism/optimism/op-service/client"
 	opcrypto "github.com/ethereum-optimism/optimism/op-service/crypto"
-	dial "github.com/ethereum-optimism/optimism/op-service/dummydial"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum-optimism/optimism/op-service/fallbackclient"
 	opsigner "github.com/ethereum-optimism/optimism/op-service/signer"
 	txmetrics "github.com/ethereum-optimism/optimism/op-service/txmgr/metrics"
 	"github.com/ethereum/go-ethereum/common"
@@ -77,7 +76,7 @@ var (
 		SafeAbortNonceTooLowCount: uint64(3),
 		FeeLimitMultiplier:        uint64(5),
 		FeeLimitThresholdGwei:     100.0,
-		BlobGasPriceLimitGwei:     100.0,
+		BlobGasPriceLimitGwei:     0,
 		MinTipCapGwei:             1.0,
 		MinBaseFeeGwei:            1.0,
 		ResubmissionTimeout:       48 * time.Second,
@@ -91,7 +90,7 @@ var (
 		SafeAbortNonceTooLowCount: uint64(3),
 		FeeLimitMultiplier:        uint64(5),
 		FeeLimitThresholdGwei:     100.0,
-		BlobGasPriceLimitGwei:     100.0,
+		BlobGasPriceLimitGwei:     0,
 		MinTipCapGwei:             1.0,
 		MinBaseFeeGwei:            1.0,
 		ResubmissionTimeout:       24 * time.Second,
@@ -152,7 +151,7 @@ func CLIFlagsWithDefaults(envPrefix string, defaults DefaultFlagValues) []cli.Fl
 		},
 		&cli.Float64Flag{
 			Name:    BlobGasPriceLimitFlagName,
-			Usage:   "The maximum limit (in GWei) of blob gas price, above which will stop submit and wait for the price go down",
+			Usage:   "The maximum limit (in GWei) of blob gas price, above which will stop submit and wait for the price go down. Default value is 0(disabled)",
 			Value:   defaults.BlobGasPriceLimitGwei,
 			EnvVars: prefixEnvVars("TXMGR_BLOB_GAS_PRICE_LIMIT"),
 		},
@@ -308,11 +307,11 @@ func NewConfig(cfg CLIConfig, l log.Logger, m txmetrics.TxMetricer) (Config, err
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.NetworkTimeout)
 	defer cancel()
-	l1, err := dial.DialEthClientWithTimeoutAndFallback(ctx, cfg.L1RPCURL, dial.DefaultDialTimeout, l, dial.TxmgrFallbackThreshold, m)
+	l1, err := fallbackclient.DialEthClientWithTimeoutAndFallback(ctx, cfg.L1RPCURL, fallbackclient.DefaultDialTimeout, l, fallbackclient.TxmgrFallbackThreshold, m)
 	if err != nil {
 		return Config{}, fmt.Errorf("could not dial eth client: %w", err)
 	}
-	l1 = client.NewInstrumentedClient(l1, m)
+	l1 = fallbackclient.NewInstrumentedClient(l1, m)
 
 	ctx, cancel = context.WithTimeout(context.Background(), cfg.NetworkTimeout)
 	defer cancel()

@@ -34,8 +34,12 @@ func init() {
 	cli.VersionFlag.(*cli.BoolFlag).Category = MiscCategory
 }
 
-func prefixEnvVars(name string) []string {
-	return []string{EnvVarPrefix + "_" + name}
+func prefixEnvVars(names ...string) []string {
+	envs := make([]string, 0, len(names))
+	for _, name := range names {
+		envs = append(envs, EnvVarPrefix+"_"+name)
+	}
+	return envs
 }
 
 var (
@@ -76,11 +80,11 @@ var (
 		EnvVars:  prefixEnvVars("L1_BEACON_HEADER"),
 		Category: L1RPCCategory,
 	}
-	BeaconArchiverAddr = &cli.StringFlag{
-		Name:     "l1.beacon-archiver",
-		Usage:    "Address of L1 Beacon-node compatible HTTP endpoint to use. This is used to fetch blobs that the --l1.beacon does not have (i.e expired blobs).",
-		Required: false,
-		EnvVars:  prefixEnvVars("L1_BEACON_ARCHIVER"),
+	BeaconFallbackAddrs = &cli.StringSliceFlag{
+		Name:     "l1.beacon-fallbacks",
+		Aliases:  []string{"l1.beacon-archiver"},
+		Usage:    "Addresses of L1 Beacon-API compatible HTTP fallback endpoints. Used to fetch blob sidecars not availalbe at the l1.beacon (e.g. expired blobs).",
+		EnvVars:  prefixEnvVars("L1_BEACON_FALLBACKS", "L1_BEACON_ARCHIVER"),
 		Category: L1RPCCategory,
 	}
 	BeaconCheckIgnore = &cli.BoolFlag{
@@ -180,11 +184,39 @@ var (
 		Value:    20,
 		Category: L1RPCCategory,
 	}
+	L1RPCMaxCacheSize = &cli.IntFlag{
+		Name:     "l1.rpc-max-cache-size",
+		Usage:    "The maximum cache size of the L1 client. it should be greater than or equal to the maximum height difference between the L1 blocks corresponding to the unsafe block height and the safe block height. Must be greater than or equal to 1",
+		EnvVars:  prefixEnvVars("L1_RPC_MAX_CACHE_SIZE"),
+		Value:    1000,
+		Category: L1RPCCategory,
+	}
 	L1HTTPPollInterval = &cli.DurationFlag{
 		Name:     "l1.http-poll-interval",
 		Usage:    "Polling interval for latest-block subscription when using an HTTP RPC provider. Ignored for other types of RPC endpoints.",
 		EnvVars:  prefixEnvVars("L1_HTTP_POLL_INTERVAL"),
 		Value:    time.Second * 3,
+		Category: L1RPCCategory,
+	}
+	L1ArchiveBlobRpcAddr = &cli.StringFlag{
+		Name:     "l1.archive-blob-rpc",
+		Usage:    "Optional address of L1 archive blob endpoint to use. Multiple alternative addresses are supported, separated by commas, and will rotate when error",
+		Required: false,
+		EnvVars:  prefixEnvVars("L1_ARCHIVE_BLOB_RPC"),
+		Category: RollupCategory,
+	}
+	L1BlobRpcRateLimit = &cli.Float64Flag{
+		Name:     "l1.blob-rpc-rate-limit",
+		Usage:    "Optional self-imposed global rate-limit on L1 blob RPC requests, specified in requests / second. Disabled if set to 0.",
+		EnvVars:  prefixEnvVars("L1_BLOB_RPC_RATE_LIMIT"),
+		Value:    0,
+		Category: L1RPCCategory,
+	}
+	L1BlobRpcMaxBatchSize = &cli.IntFlag{
+		Name:     "l1.blob-rpc-max-batch-size",
+		Usage:    "Optional maximum number of L1 blob RPC requests to bundle",
+		EnvVars:  prefixEnvVars("L1_BLOB_RPC_MAX_BATCH_SIZE"),
+		Value:    20,
 		Category: L1RPCCategory,
 	}
 	VerifierL1Confs = &cli.Uint64Flag{
@@ -217,6 +249,12 @@ var (
 		Name:     "sequencer.priority",
 		Usage:    "Enable sequencer step takes precedence over other steps.",
 		EnvVars:  prefixEnvVars("SEQUENCER_PRIORITY"),
+		Category: SequencerCategory,
+	}
+	SequencerCombinedEngineFlag = &cli.BoolFlag{
+		Name:     "sequencer.combined-engine",
+		Usage:    "Enable sequencer select combined engine api when sealing payload.",
+		EnvVars:  prefixEnvVars("SEQUENCER_COMBINED_ENGINE"),
 		Category: SequencerCategory,
 	}
 	SequencerL1Confs = &cli.Uint64Flag{
@@ -303,6 +341,18 @@ var (
 		EnvVars:  prefixEnvVars("SAFEDB_PATH"),
 		Category: OperationsCategory,
 	}
+	FastnodeMode = &cli.BoolFlag{
+		Name:    "fastnode",
+		Usage:   "Fastnode has a strong dependency on a specific synchronization mode during synchronization, so please set this flag when running fastnode.",
+		EnvVars: prefixEnvVars("FASTNODE"),
+		Value:   false,
+	}
+	ELTriggerGap = &cli.IntFlag{
+		Name:    "el-trigger.gap",
+		Usage:   "gap to trigger el-sync",
+		Value:   86400,
+		EnvVars: prefixEnvVars("EL_TRIGGER_GAP"),
+	}
 	/* Deprecated Flags */
 	L2EngineSyncEnabled = &cli.BoolFlag{
 		Name:    "l2.engine-sync",
@@ -370,23 +420,30 @@ var requiredFlags = []cli.Flag{
 var optionalFlags = []cli.Flag{
 	BeaconAddr,
 	BeaconHeader,
-	BeaconArchiverAddr,
+	BeaconFallbackAddrs,
 	BeaconCheckIgnore,
 	BeaconFetchAllSidecars,
 	SyncModeFlag,
+	FastnodeMode,
+	ELTriggerGap,
 	RPCListenAddr,
 	RPCListenPort,
 	L1TrustRPC,
 	L1RPCProviderKind,
 	L1RPCRateLimit,
 	L1RPCMaxBatchSize,
+	L1RPCMaxCacheSize,
 	L1RPCMaxConcurrency,
 	L1HTTPPollInterval,
+	L1ArchiveBlobRpcAddr,
+	L1BlobRpcRateLimit,
+	L1BlobRpcMaxBatchSize,
 	VerifierL1Confs,
 	SequencerEnabledFlag,
 	SequencerStoppedFlag,
 	SequencerMaxSafeLagFlag,
 	SequencerPriorityFlag,
+	SequencerCombinedEngineFlag,
 	SequencerL1Confs,
 	L1EpochPollIntervalFlag,
 	RuntimeConfigReloadIntervalFlag,

@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"context"
 	"crypto/ecdsa"
 	crand "crypto/rand"
 	"fmt"
@@ -501,6 +502,10 @@ func TestSpanBatchLowThroughputChain(gt *testing.T) {
 		addr := crypto.PubkeyToAddress(privateKey.PublicKey)
 		require.NoError(t, err)
 		addrs[i] = addr
+
+		bal, err := cl.BalanceAt(context.Background(), addr, nil)
+		require.NoError(gt, err)
+		require.Equal(gt, 1, bal.Cmp(common.Big0), "account %d must have non-zero balance, address: %s, balance: %d", i, addr, bal)
 	}
 
 	sequencer.ActL2PipelineFull(t)
@@ -519,7 +524,7 @@ func TestSpanBatchLowThroughputChain(gt *testing.T) {
 				data := make([]byte, rand.Intn(100))
 				_, err := crand.Read(data[:]) // fill with random bytes
 				require.NoError(t, err)
-				gas, err := core.IntrinsicGas(data, nil, false, true, true, false)
+				gas, err := core.IntrinsicGas(data, nil, nil, false, true, false, false)
 				require.NoError(t, err)
 				baseFee := seqEngine.l2Chain.CurrentBlock().BaseFee
 				nonce, err := cl.PendingNonceAt(t.Ctx(), addrs[userIdx])
@@ -658,7 +663,7 @@ func TestBatchEquivalence(gt *testing.T) {
 			data := make([]byte, rand.Intn(100))
 			_, err := crand.Read(data[:]) // fill with random bytes
 			require.NoError(t, err)
-			gas, err := core.IntrinsicGas(data, nil, false, true, true, false)
+			gas, err := core.IntrinsicGas(data, nil, nil, false, true, false, false)
 			require.NoError(t, err)
 			baseFee := seqEngine.l2Chain.CurrentBlock().BaseFee
 			nonce, err := seqEngCl.PendingNonceAt(t.Ctx(), addrs[userIdx])

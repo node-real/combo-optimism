@@ -9,6 +9,7 @@ import (
 	plasma "github.com/ethereum-optimism/optimism/op-plasma"
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum-optimism/optimism/op-service/fallbackclient"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 	"github.com/ethereum/go-ethereum/common"
@@ -24,7 +25,7 @@ func setupFallbackClientTest(t Testing, sd *e2eutils.SetupData, log log.Logger, 
 	miner := NewL1MinerWithPort(t, log, sd.L1Cfg, 8545)
 	l1_2 := NewL1ReplicaWithPort(t, log, sd.L1Cfg, 8546)
 	l1_3 := NewL1ReplicaWithPort(t, log, sd.L1Cfg, 8547)
-	isMultiUrl, urlList := client.MultiUrlParse(l1Url)
+	isMultiUrl, urlList := fallbackclient.MultiUrlParse(l1Url)
 	require.True(t, isMultiUrl)
 	opts := []client.RPCOption{
 		client.WithHttpPollInterval(0),
@@ -37,11 +38,12 @@ func setupFallbackClientTest(t Testing, sd *e2eutils.SetupData, log log.Logger, 
 	})
 	l1F, err := sources.NewL1Client(fallbackClient, log, nil, sources.L1ClientDefaultConfig(sd.RollupCfg, false, sources.RPCKindBasic))
 	require.NoError(t, err)
+	l1Blob := sources.NewBSCBlobClient([]client.RPC{rpc})
 	engine := NewL2Engine(t, log, sd.L2Cfg, sd.RollupCfg.Genesis.L1, jwtPath)
 	l2Cl, err := sources.NewEngineClient(engine.RPCClient(), log, nil, sources.EngineClientDefaultConfig(sd.RollupCfg))
 	require.NoError(t, err)
 
-	sequencer := NewL2Sequencer(t, log, l1F, l1F, plasma.Disabled, l2Cl, sd.RollupCfg, 0)
+	sequencer := NewL2Sequencer(t, log, l1F, l1Blob, plasma.Disabled, l2Cl, sd.RollupCfg, 0)
 	return miner, l1_2, l1_3, engine, sequencer, fallbackClient.(*sources.FallbackClient)
 }
 

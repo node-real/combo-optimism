@@ -29,6 +29,9 @@ parser.add_argument('--init', help='init BSC L1 devnet chain', type=bool, action
 
 log = logging.getLogger()
 
+# Global constants
+FORKS = ["delta", "ecotone", "fjord"]
+
 # Global environment variables
 DEVNET_NO_BUILD = os.getenv('DEVNET_NO_BUILD') == "true"
 DEVNET_FPAC = os.getenv('DEVNET_FPAC') == "true"
@@ -69,7 +72,7 @@ def main():
     node_deploy_genesis_dir = pjoin(node_deploy_dir, 'genesis')
     contracts_bedrock_dir = pjoin(monorepo_dir, 'packages', 'contracts-bedrock')
     deployment_dir = pjoin(contracts_bedrock_dir, 'deployments', 'devnetL1')
-    forge_dump_path = pjoin(contracts_bedrock_dir, 'Deploy-900.json')
+    forge_l1_dump_path = pjoin(contracts_bedrock_dir, 'state-dump-900.json')
     op_node_dir = pjoin(args.monorepo_dir, 'op-node')
     ops_bedrock_dir = pjoin(monorepo_dir, 'ops-bedrock')
     deploy_config_dir = pjoin(contracts_bedrock_dir, 'deploy-config')
@@ -86,7 +89,7 @@ def main():
       node_deploy_genesis_dir=node_deploy_genesis_dir,
       contracts_bedrock_dir=contracts_bedrock_dir,
       deployment_dir=deployment_dir,
-      forge_dump_path=forge_dump_path,
+      forge_l1_dump_path=forge_l1_dump_path,
       l1_deployments_path=pjoin(deployment_dir, '.deploy'),
       deploy_config_dir=deploy_config_dir,
       devnet_config_path=devnet_config_path,
@@ -97,7 +100,7 @@ def main():
       sdk_dir=sdk_dir,
       genesis_l1_path=pjoin(devnet_dir, 'genesis-l1.json'),
       genesis_l2_path=pjoin(devnet_dir, 'genesis-l2.json'),
-      allocs_path=pjoin(devnet_dir, 'allocs-l1.json'),
+      allocs_l1_path=pjoin(devnet_dir, 'allocs-l1.json'),
       addresses_json_path=pjoin(devnet_dir, 'addresses.json'),
       sdk_addresses_json_path=pjoin(devnet_dir, 'sdk-addresses.json'),
       rollup_config_path=pjoin(devnet_dir, 'rollup.json')
@@ -112,6 +115,7 @@ def main():
 
     if args.allocs:
         devnet_l1_genesis(paths)
+        devnet_l2_allocs(paths)
         return
 
     if args.init:
@@ -121,59 +125,9 @@ def main():
     git_commit = subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
     git_date = subprocess.run(['git', 'show', '-s', "--format=%ct"], capture_output=True, text=True).stdout.strip()
 
-    # CI loads the images from workspace, and does not otherwise know the images are good as-is
-#     if os.getenv('DEVNET_NO_BUILD') == "true":
-#         log.info('Skipping docker images build')
-#     else:
-#         log.info(f'Building docker images for git commit {git_commit} ({git_date})')
-#         run_command(['docker', 'compose', 'build', '--progress', 'plain',
-#                      '--build-arg', f'GIT_COMMIT={git_commit}', '--build-arg', f'GIT_DATE={git_date}'],
-#                     cwd=paths.ops_bedrock_dir, env={
-#             'PWD': paths.ops_bedrock_dir,
-#             'DOCKER_BUILDKIT': '1', # (should be available by default in later versions, but explicitly enable it anyway)
-#             'COMPOSE_DOCKER_CLI_BUILD': '1'  # use the docker cache
-#         })
-
     log.info('Devnet starting')
     devnet_deploy(paths)
 
-
-def deploy_contracts(paths):
-    wait_up(8545)
-    wait_for_rpc_server('http://127.0.0.1:8545')
-    res = eth_accounts('127.0.0.1:8545')
-
-    response = json.loads(res)
-    account = response['result'][0]
-    log.info(f'Deploying with {account}')
-
-    # send some ether to the create2 deployer account
-    run_command([
-        'cast', 'send', '--from', account,
-        '--rpc-url', 'http://127.0.0.1:8545',
-        '--unlocked', '--value', '1ether', '0x3fAB184622Dc19b6109349B94811493BF2a45362'
-    ], env={}, cwd=paths.contracts_bedrock_dir)
-
-    # deploy the create2 deployer
-    run_command([
-      'cast', 'publish', '--rpc-url', 'http://127.0.0.1:8545',
-      '0xf8a58085174876e800830186a08080b853604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf31ba02222222222222222222222222222222222222222222222222222222222222222a02222222222222222222222222222222222222222222222222222222222222222'
-    ], env={}, cwd=paths.contracts_bedrock_dir)
-
-    fqn = 'scripts/Deploy.s.sol:Deploy'
-    run_command([
-        'forge', 'script', fqn, '--sender', account,
-        '--rpc-url', 'http://127.0.0.1:8545', '--broadcast',
-        '--unlocked'
-    ], env={}, cwd=paths.contracts_bedrock_dir)
-
-    shutil.copy(paths.l1_deployments_path, paths.addresses_json_path)
-
-    log.info('Syncing contracts.')
-    run_command([
-        'forge', 'script', fqn, '--sig', 'sync()',
-        '--rpc-url', 'http://127.0.0.1:8545'
-    ], env={}, cwd=paths.contracts_bedrock_dir)
 
 def init_devnet_l1_deploy_config(paths, update_timestamp=False):
     deploy_config = read_json(paths.devnet_config_template_path)
@@ -192,14 +146,34 @@ def devnet_l1_genesis(paths):
 
     fqn = 'scripts/Deploy.s.sol:Deploy'
     run_command([
-        'forge', 'script', '--chain-id', '900', fqn, "--sig", "runWithStateDump()"
-    ], env={}, cwd=paths.contracts_bedrock_dir)
+        'forge', 'script', fqn, "--sig", "runWithStateDump()", "--sender", "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+    ], env={
+      'DEPLOYMENT_OUTFILE': paths.l1_deployments_path,
+      'DEPLOY_CONFIG_PATH': paths.devnet_config_path,
+    }, cwd=paths.contracts_bedrock_dir)
 
-    forge_dump = read_json(paths.forge_dump_path)
-    write_json(paths.allocs_path, { "accounts": forge_dump })
-    os.remove(paths.forge_dump_path)
+    shutil.move(src=paths.forge_l1_dump_path, dst=paths.allocs_l1_path)
 
     shutil.copy(paths.l1_deployments_path, paths.addresses_json_path)
+
+def devnet_l2_allocs(paths):
+    log.info('Generating L2 genesis allocs, with L1 addresses: '+paths.l1_deployments_path)
+
+    fqn = 'scripts/L2Genesis.s.sol:L2Genesis'
+    run_command([
+        'forge', 'script', fqn, "--sig", "runWithAllUpgrades()"
+    ], env={
+      'CONTRACT_ADDRESSES_PATH': paths.l1_deployments_path,
+      'DEPLOY_CONFIG_PATH': paths.devnet_config_path,
+    }, cwd=paths.contracts_bedrock_dir)
+
+    # For the previous forks, and the latest fork (default, thus empty prefix),
+    # move the forge-dumps into place as .devnet allocs.
+    for fork in FORKS:
+        input_path = pjoin(paths.contracts_bedrock_dir, f"state-dump-901-{fork}.json")
+        output_path = pjoin(paths.devnet_dir, f'allocs-l2-{fork}.json')
+        shutil.move(src=input_path, dst=output_path)
+        log.info("Generated L2 allocs: "+output_path)
 
 def deployL1ContractsForDeploy(paths):
     log.info('Starting L1.')
@@ -214,15 +188,9 @@ def deployL1ContractsForDeploy(paths):
     l1_init_holder = l1env['INIT_HOLDER']
     l1_init_holder_prv = l1env['INIT_HOLDER_PRV']
     proposer_address = l1env['PROPOSER_ADDRESS']
+    batcher_address = l1env['BATCHER_ADDRESS']
     account = l1_init_holder
     log.info(f'Deploying with {account}')
-
-    # send some ether to the create2 deployer account
-    run_command([
-        'cast', 'send', '--private-key', l1_init_holder_prv,
-        '--rpc-url', 'http://127.0.0.1:8545', '--gas-price', '10000000000', '--legacy',
-        '--value', '1ether', '0x3fAB184622Dc19b6109349B94811493BF2a45362'
-    ], env={}, cwd=paths.contracts_bedrock_dir)
 
     # send some ether to proposer address
     run_command([
@@ -231,25 +199,41 @@ def deployL1ContractsForDeploy(paths):
         '--value', '10000ether', proposer_address
     ], env={}, cwd=paths.contracts_bedrock_dir)
 
-    # deploy the create2 deployer
+    # send some ether to batcher address
     run_command([
-      'cast', 'publish', '--rpc-url', 'http://127.0.0.1:8545',
-      '0xf8a58085174876e800830186a08080b853604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf31ba02222222222222222222222222222222222222222222222222222222222222222a02222222222222222222222222222222222222222222222222222222222222222'
+        'cast', 'send', '--private-key', l1_init_holder_prv,
+        '--rpc-url', 'http://127.0.0.1:8545', '--gas-price', '10000000000', '--legacy',
+        '--value', '10000ether', batcher_address
     ], env={}, cwd=paths.contracts_bedrock_dir)
+
+    code_result=run_command(['cast', 'code','--rpc-url', 'http://127.0.0.1:8545', '0x4e59b44847b379578588920ca78fbf26c0b4956c'],env={},cwd=paths.contracts_bedrock_dir,capture_output=True)
+    if code_result.stdout=='0x\n':
+        # send some ether to the create2 deployer account
+        run_command([
+            'cast', 'send', '--private-key', l1_init_holder_prv,
+            '--rpc-url', 'http://127.0.0.1:8545', '--gas-price', '10000000000', '--legacy',
+            '--value', '1ether', '0x3fAB184622Dc19b6109349B94811493BF2a45362'
+        ], env={}, cwd=paths.contracts_bedrock_dir)
+        # deploy the create2 deployer
+        run_command([
+          'cast', 'publish', '--rpc-url', 'http://127.0.0.1:8545',
+          '0xf8a58085174876e800830186a08080b853604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf31ba02222222222222222222222222222222222222222222222222222222222222222a02222222222222222222222222222222222222222222222222222222222222222'
+        ], env={}, cwd=paths.contracts_bedrock_dir)
+    else:
+        log.info('create2 deployer already deployed')
+
 
     fqn = 'scripts/Deploy.s.sol:Deploy'
     run_command([
         'forge', 'script', fqn, '--private-key', l1_init_holder_prv, '--with-gas-price', '10000000000', '--legacy',
         '--rpc-url', 'http://127.0.0.1:8545', '--broadcast',
-    ], env={}, cwd=paths.contracts_bedrock_dir)
+    ], env={
+        'DEPLOYMENT_OUTFILE': paths.l1_deployments_path,
+        'DEPLOY_CONFIG_PATH': paths.devnet_config_path,
+    }, cwd=paths.contracts_bedrock_dir)
 
     shutil.copy(paths.l1_deployments_path, paths.addresses_json_path)
 
-#     log.info('Syncing contracts.')
-#     run_command([
-#         'forge', 'script', fqn, '--sig', 'sync()',
-#         '--rpc-url', 'http://127.0.0.1:8545'
-#     ], env={}, cwd=paths.contracts_bedrock_dir)
     log.info('Deployed L1 contracts.')
 
 # Bring up the devnet where the contracts are deployed to L1
@@ -263,6 +247,8 @@ def devnet_deploy(paths):
     l1_init_holder_prv = l1env['INIT_HOLDER_PRV']
     proposer_address = l1env['PROPOSER_ADDRESS']
     proposer_address_prv = l1env['PROPOSER_ADDRESS_PRV']
+    batcher_address = l1env['BATCHER_ADDRESS']
+    batcher_address_prv = l1env['BATCHER_ADDRESS_PRV']
     log.info('Generating network config.')
     devnet_cfg_orig = pjoin(paths.contracts_bedrock_dir, 'deploy-config', 'devnetL1.json')
     devnet_cfg_backup = pjoin(paths.devnet_dir, 'devnetL1.json.bak')
@@ -279,17 +265,21 @@ def devnet_deploy(paths):
     deploy_config['eip1559Denominator'] = 8
     deploy_config['eip1559DenominatorCanyon'] = 8
     deploy_config['eip1559Elasticity'] = 2
-    deploy_config['batchSenderAddress'] = l1_init_holder
     deploy_config['l2OutputOracleProposer'] = proposer_address
+    deploy_config['batchSenderAddress'] = batcher_address
     deploy_config['baseFeeVaultRecipient'] = l1_init_holder
     deploy_config['l1FeeVaultRecipient'] = l1_init_holder
     deploy_config['sequencerFeeVaultRecipient'] = l1_init_holder
     deploy_config['proxyAdminOwner'] = l1_init_holder
     deploy_config['finalSystemOwner'] = l1_init_holder
     deploy_config['governanceTokenOwner'] = l1_init_holder
-    deploy_config['l2GenesisDeltaTimeOffset'] = "0x1"
+    deploy_config['l2GenesisDeltaTimeOffset'] = "0x0"
     deploy_config['fermat'] = 0
-    deploy_config['L2GenesisEcotoneTimeOffset'] = "0x2"
+    deploy_config['L2GenesisEcotoneTimeOffset'] = "0x0"
+    deploy_config['snowTimeOffset'] = "0x0"
+    deploy_config['haberTimeOffset'] = "0x0"
+    deploy_config['wrightTimeOffset'] = "0x0"
+    deploy_config['L2GenesisFjordTimeOffset'] = "0x0"
     write_json(devnet_cfg_orig, deploy_config)
 
     if os.path.exists(paths.addresses_json_path):
@@ -317,10 +307,17 @@ def devnet_deploy(paths):
     else:
         log.info('Generating network config.')
         log.info('Generating L2 genesis and rollup configs.')
+        l2_allocs_path = pjoin(paths.devnet_dir, f'allocs-l2-{FORKS[-1]}.json')
+        if os.path.exists(l2_allocs_path) == False:
+          devnet_l2_allocs(paths)
+        else:
+          log.info('Re-using existing L2 allocs.')
+
         run_command([
             'go', 'run', 'cmd/main.go', 'genesis', 'l2',
             '--l1-rpc', 'http://localhost:8545',
             '--deploy-config', paths.devnet_config_path,
+            '--l2-allocs', l2_allocs_path,
             '--l1-deployments', paths.addresses_json_path,
             '--outfile.l2', paths.genesis_l2_path,
             '--outfile.rollup', paths.rollup_config_path
@@ -347,7 +344,8 @@ def devnet_deploy(paths):
         'SEQUENCER_BATCH_INBOX_ADDRESS': rollup_config['batch_inbox_address'],
         'OP_BATCHER_SEQUENCER_BATCH_INBOX_ADDRESS': rollup_config['batch_inbox_address'],
         'INIT_HOLDER_PRV': l1_init_holder_prv,
-        'PROPOSER_ADDRESS_PRV': proposer_address_prv
+        'PROPOSER_ADDRESS_PRV': proposer_address_prv,
+        'BATCHER_ADDRESS_PRV': batcher_address_prv
     })
 
     log.info('Devnet ready.')
@@ -378,7 +376,15 @@ def bsc_l1_init(paths):
             file_content = file.read()
         file_content = file_content.replace('0x04d63aBCd2b9b1baa327f2Dda0f873F197ccd186', l1_init_holder)
         file_content = file_content.replace('59ba8068eb256d520179e903f43dacf6d8d57d72bd306e1bd603fdb8c8da10e8', l1_init_holder_prv)
+        file_content = file_content.replace('DefaultExtraReserveForBlobRequests=32', 'DefaultExtraReserveForBlobRequests=524288')
+        file_content = file_content.replace('MinBlocksForBlobRequests=576', 'MinBlocksForBlobRequests=524288')
         with open(pjoin(paths.node_deploy_dir,'.env'), 'w') as file:
+            file.write(file_content)
+
+        with open(pjoin(paths.node_deploy_dir,'config.toml'), 'r') as file:
+            file_content = file.read()
+        file_content = file_content.replace('Level = "info"', 'Level = "trace"')
+        with open(pjoin(paths.node_deploy_dir,'config.toml'), 'w') as file:
             file.write(file_content)
 
     shutil.copy(pjoin(paths.bsc_dir,'build','bin','geth'), pjoin(paths.node_deploy_dir,'bin','geth'))
@@ -466,7 +472,7 @@ def run_command_preset(command: CommandPreset):
     return proc.returncode
 
 
-def run_command(args, check=True, shell=False, cwd=None, env=None, timeout=None):
+def run_command(args, check=True, shell=False, cwd=None, env=None, timeout=None,capture_output=False):
     env = env if env else {}
     return subprocess.run(
         args,
@@ -477,7 +483,9 @@ def run_command(args, check=True, shell=False, cwd=None, env=None, timeout=None)
             **env
         },
         cwd=cwd,
-        timeout=timeout
+        timeout=timeout,
+        capture_output=capture_output,
+        text=True
     )
 
 

@@ -80,6 +80,7 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*node.Config, error) {
 		Rollup: *rollupConfig,
 		Driver: *driverConfig,
 		Beacon: NewBeaconEndpointConfig(ctx),
+		L1Blob: NewL1BlobEndpointConfig(ctx),
 		RPC: node.RPCConfig{
 			ListenAddr:  ctx.String(flags.RPCListenAddr.Name),
 			ListenPort:  ctx.Int(flags.RPCListenPort.Name),
@@ -132,9 +133,21 @@ func NewBeaconEndpointConfig(ctx *cli.Context) node.L1BeaconEndpointSetup {
 	return &node.L1BeaconEndpointConfig{
 		BeaconAddr:             ctx.String(flags.BeaconAddr.Name),
 		BeaconHeader:           ctx.String(flags.BeaconHeader.Name),
-		BeaconArchiverAddr:     ctx.String(flags.BeaconArchiverAddr.Name),
+		BeaconFallbackAddrs:    ctx.StringSlice(flags.BeaconFallbackAddrs.Name),
 		BeaconCheckIgnore:      ctx.Bool(flags.BeaconCheckIgnore.Name),
 		BeaconFetchAllSidecars: ctx.Bool(flags.BeaconFetchAllSidecars.Name),
+	}
+}
+
+func NewL1BlobEndpointConfig(ctx *cli.Context) node.L1BlobEndpointSetup {
+	nodeAddrs := ctx.String(flags.L1NodeAddr.Name)
+	if ctx.IsSet(flags.L1ArchiveBlobRpcAddr.Name) {
+		nodeAddrs = nodeAddrs + "," + ctx.String(flags.L1ArchiveBlobRpcAddr.Name)
+	}
+	return &node.L1BlobEndpointConfig{
+		NodeAddrs: nodeAddrs,
+		RateLimit: ctx.Float64(flags.L1BlobRpcRateLimit.Name),
+		BatchSize: ctx.Int(flags.L1BlobRpcMaxBatchSize.Name),
 	}
 }
 
@@ -145,6 +158,7 @@ func NewL1EndpointConfig(ctx *cli.Context) *node.L1EndpointConfig {
 		L1RPCKind:        sources.RPCProviderKind(strings.ToLower(ctx.String(flags.L1RPCProviderKind.Name))),
 		RateLimit:        ctx.Float64(flags.L1RPCRateLimit.Name),
 		BatchSize:        ctx.Int(flags.L1RPCMaxBatchSize.Name),
+		CacheSize:        ctx.Int(flags.L1RPCMaxCacheSize.Name),
 		HttpPollInterval: ctx.Duration(flags.L1HTTPPollInterval.Name),
 		MaxConcurrency:   ctx.Int(flags.L1RPCMaxConcurrency.Name),
 	}
@@ -190,12 +204,13 @@ func NewConfigPersistence(ctx *cli.Context) node.ConfigPersistence {
 
 func NewDriverConfig(ctx *cli.Context) *driver.Config {
 	return &driver.Config{
-		VerifierConfDepth:   ctx.Uint64(flags.VerifierL1Confs.Name),
-		SequencerConfDepth:  ctx.Uint64(flags.SequencerL1Confs.Name),
-		SequencerEnabled:    ctx.Bool(flags.SequencerEnabledFlag.Name),
-		SequencerStopped:    ctx.Bool(flags.SequencerStoppedFlag.Name),
-		SequencerMaxSafeLag: ctx.Uint64(flags.SequencerMaxSafeLagFlag.Name),
-		SequencerPriority:   ctx.Bool(flags.SequencerPriorityFlag.Name),
+		VerifierConfDepth:       ctx.Uint64(flags.VerifierL1Confs.Name),
+		SequencerConfDepth:      ctx.Uint64(flags.SequencerL1Confs.Name),
+		SequencerEnabled:        ctx.Bool(flags.SequencerEnabledFlag.Name),
+		SequencerStopped:        ctx.Bool(flags.SequencerStoppedFlag.Name),
+		SequencerMaxSafeLag:     ctx.Uint64(flags.SequencerMaxSafeLagFlag.Name),
+		SequencerPriority:       ctx.Bool(flags.SequencerPriorityFlag.Name),
+		SequencerCombinedEngine: ctx.Bool(flags.SequencerCombinedEngineFlag.Name),
 	}
 }
 
@@ -263,6 +278,10 @@ func applyOverrides(ctx *cli.Context, rollupConfig *rollup.Config) {
 		ecotone := ctx.Uint64(opflags.EcotoneOverrideFlagName)
 		rollupConfig.EcotoneTime = &ecotone
 	}
+	if ctx.IsSet(opflags.FjordOverrideFlagName) {
+		fjord := ctx.Uint64(opflags.FjordOverrideFlagName)
+		rollupConfig.FjordTime = &fjord
+	}
 }
 
 func NewSnapshotLogger(ctx *cli.Context) (log.Logger, error) {
@@ -281,7 +300,7 @@ func NewSnapshotLogger(ctx *cli.Context) (log.Logger, error) {
 
 func NewSyncConfig(ctx *cli.Context, log log.Logger) (*sync.Config, error) {
 	if ctx.IsSet(flags.L2EngineSyncEnabled.Name) && ctx.IsSet(flags.SyncModeFlag.Name) {
-		return nil, errors.New("cannot set both --l2.engine-sync and --syncmode at the same time.")
+		return nil, errors.New("cannot set both --l2.engine-sync and --syncmode at the same time")
 	} else if ctx.IsSet(flags.L2EngineSyncEnabled.Name) {
 		log.Error("l2.engine-sync is deprecated and will be removed in a future release. Use --syncmode=execution-layer instead.")
 	}
@@ -289,9 +308,18 @@ func NewSyncConfig(ctx *cli.Context, log log.Logger) (*sync.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	//fastnode config
+	elTriggerGap := ctx.Int(flags.ELTriggerGap.Name)
+	if ctx.Bool(flags.FastnodeMode.Name) {
+		mode = sync.ELSync
+		// fastnode needs a smaller gap
+		elTriggerGap = 120
+	}
 	cfg := &sync.Config{
 		SyncMode:           mode,
 		SkipSyncStartCheck: ctx.Bool(flags.SkipSyncStartCheck.Name),
+		ELTriggerGap:       elTriggerGap,
 	}
 	if ctx.Bool(flags.L2EngineSyncEnabled.Name) {
 		cfg.SyncMode = sync.ELSync
